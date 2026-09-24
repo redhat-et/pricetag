@@ -7,7 +7,6 @@ resources:
   - namespace.yaml
   - maas-api-rbac-binding.yaml
   - ../../base
-  - praxis-vertex.yaml
 
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
@@ -18,12 +17,15 @@ images:
     newTag: practice-05e9d104
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
-    newTag: practice-9be8880c
-  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai-vertex
-    newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
     newTag: ${VERTEX_IMAGE_TAG}
 
 patches:
+  - path: praxis-vertex-secret-mount.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
   - target:
       group: apps
       version: v1

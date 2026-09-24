@@ -234,11 +234,14 @@ creates the namespace, CRDs, CNPG operator, database, applications, and Routes i
 target only. It does not build images, create the AWS bucket, create the IAM role, copy
 production data, or migrate production secrets automatically.
 
-### 3.3 EnMaaS Vertex deployment
+### 3.3 EnMaaS Vertex routing
 
-The EnMaaS overlay adds an isolated, one-replica Vertex gateway deployment and
-the `ai-gateway-vertex` Route. It does not change the existing Praxis listeners
-or routes. Other profiles do not include these resources.
+The EnMaaS overlay adds Vertex as another supplier behind the existing Praxis
+`unified` listener and `ai-gateway-unified` Route. It uses the existing Praxis
+Deployment and API endpoint: a request with model `vertex/claude-sonnet-4-5`
+routes to Vertex; existing Claude, Qwen, and GLM model routes continue to use
+their current suppliers. Other profiles do not enable the Vertex route or mount
+its service-account Secret.
 
 Before deploying EnMaaS Vertex:
 
@@ -248,19 +251,20 @@ Before deploying EnMaaS Vertex:
    `PRAXIS_AI_FEATURES=full,gcp-adc-filter`. Record the source commit and built
    image digest from the build record. Mirror that same digest into EnMaaS as an
    immutable `practice-<source-sha>` tag and set `VERTEX_IMAGE_TAG` to it.
-   `deploy.sh` does not build or mirror images; never point this Deployment at
-   the ordinary `praxis-ai` image unless it was built with the GCP feature.
+   `deploy.sh` does not build or mirror images; the EnMaaS Praxis Deployment
+   must use this feature-enabled image.
 2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
 3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
    JSON file. The deploy script creates `vertex-sa-key` from that file and
-   preserves the Secret on later runs. To rotate it, set
-   `ROTATE_SECRETS=true` and provide the replacement file. Key contents are
-   never placed in a manifest.
+   mounts it into the existing Praxis pods. The Secret is preserved on later
+   runs. To rotate it, set `ROTATE_SECRETS=true` and provide the replacement
+   file. Key contents are never placed in a manifest.
 
 This is the initial key-file credential path; GCP Workload Identity Federation
-is not included. Requests use Anthropic Messages model IDs such as
-`vertex/claude-sonnet-4-5`, are authenticated by PriceTag API keys, pass through
-the EnMaaS model-access policy, and meter under source `praxis-ai-vertex`.
+is not included. Requests use the existing Anthropic Messages endpoint and are
+authenticated by PriceTag API keys, pass through the EnMaaS model-access policy,
+and meter through the existing gateway path. Vertex calls retain the
+`vertex/` model prefix for attribution.
 
 ---
 

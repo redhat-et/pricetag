@@ -96,7 +96,7 @@ if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
-# The EnMaaS Vertex deployment mounts its service-account JSON from a
+# The EnMaaS Praxis deployment mounts its service-account JSON from a
 # Secret. Preserve existing key material on reruns; rotate only from an
 # explicitly supplied file when ROTATE_SECRETS=true.
 if [[ "$PROFILE" == enmaas ]]; then
@@ -181,15 +181,22 @@ if [[ -n "$binding_name" ]] && \
   oc delete clusterrolebinding "$binding_name"
 fi
 
-oc kustomize "$PROFILE_DIR" |
-  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" | oc apply -f -
+RENDER_DIR="$(mktemp -d)"
+trap 'rm -rf "$RENDER_DIR"' EXIT
+oc kustomize "$PROFILE_DIR" > "$RENDER_DIR/manifests.yaml"
+if [[ "$PROFILE" == enmaas ]]; then
+  command -v python3 >/dev/null || die "python3 is required to render the EnMaaS Vertex config fragments"
+  python3 "$SCRIPT_DIR/render-enmaas-vertex.py" \
+    "$RENDER_DIR/manifests.yaml" "$PROFILE_DIR/vertex-fragments" \
+    > "$RENDER_DIR/with-vertex.yaml"
+  mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
+fi
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" \
+  < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
-if [[ "$PROFILE" == enmaas ]]; then
-  oc -n "$NAMESPACE" rollout status deployment/praxis-vertex --timeout=180s
-fi
 
 printf '\nPriceTag deployed to %s (%s)\n' "$NAMESPACE" "$PROFILE"
 oc -n "$NAMESPACE" get pods

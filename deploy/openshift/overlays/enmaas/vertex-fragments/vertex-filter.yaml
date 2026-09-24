@@ -1,0 +1,3 @@
+- filter: vertex
+  project: "${VERTEX_PROJECT}"
+  location: global
