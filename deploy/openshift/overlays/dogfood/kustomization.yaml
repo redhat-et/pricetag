@@ -5,4 +5,5 @@ namespace: ai-gateway-dogfood
 
 resources:
   - namespace.yaml
+  - maas-api-rbac-binding.yaml
   - ../../base

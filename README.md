@@ -18,6 +18,11 @@ The intended profiles are:
 - `dogfood`: the team deployment profile.
 - `ha`: CloudNativePG, backups, restore, and read-replica operations.
 
+The deploy script preserves existing generated Secrets and ConfigMaps. Set
+`ROTATE_SECRETS=true` only for an intentional credential rotation; otherwise a
+second run reuses the existing database password, session secret, provider
+credentials, and COS credentials.
+
 ## Repository Layout
 
 - `deploy/openshift/`: deployment manifests and operational database assets.
