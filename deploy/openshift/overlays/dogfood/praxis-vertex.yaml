@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: praxis-vertex-config
+data:
+  praxis.yaml: |
+    admin:
+      address: "0.0.0.0:9901"
+
+    listeners:
+      - name: vertex
+        address: "0.0.0.0:8080"
+        filter_chains:
+          - vertex
+
+    filter_chains:
+      - name: vertex
+        filters:
+          - filter: api_key_auth
+            validate_url: "http://maas-api:8080/internal/v1/api-keys/validate"
+            token_header: "x-api-key"
+            cache_ttl_seconds: 300
+            timeout_seconds: 5
+
+          - filter: model_access
+            mode: denylist
+            models:
+            overrides:
+              - groups: ["octo-eng"]
+                mode: allowlist
+                models: ["*"]
+            group_metadata_key: "x-tenant-group"
+            max_body_bytes: 33554432
+
+          - filter: identity_header_guard
+            prefix: "x-tenant-"
+
+          - filter: router
+            routes:
+              - path_prefix: "/"
+                cluster: vertex
+
+          # Capture the original model before the vertex filter moves it into
+          # the upstream URL. Metering source is a distinct Vertex attribution.
+          - filter: external_metering
+            metering_url: "http://metering-service:8080"
+            allow_private_endpoint: true
+            timeout_seconds: 5
+            feature_key: "inference-tokens"
+            source: "praxis-ai-vertex"
+            fail_open: true
+            identity_header_prefix: "x-tenant-"
+            default_model: "unknown"
+
+          - filter: token_count
+            provider: anthropic
+
+          - filter: token_usage_headers
+
+          - filter: vertex
+            project: "${VERTEX_PROJECT}"
+            location: global
+
+          - filter: gcp_adc
+            source: key_file
+            credentials_file: /etc/vertex-sa/sa-key.json
+
+          - filter: headers
+            request_set:
+              - name: "Host"
+                value: "aiplatform.googleapis.com"
+              - name: "anthropic-version"
+                value: "2023-06-01"
+
+          - filter: load_balancer
+            clusters:
+              - name: vertex
+                tls:
+                  sni: "aiplatform.googleapis.com"
+                idle_timeout_ms: 45000
+                endpoints:
+                  - "aiplatform.googleapis.com:443"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: praxis-vertex
+  labels:
+    app: praxis-vertex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: praxis-vertex
+  template:
+    metadata:
+      labels:
+        app: praxis-vertex
+    spec:
+      containers:
+        - name: praxis-vertex
+          image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai:vertex
+          args: ["-c", "/etc/praxis/praxis.yaml"]
+          ports:
+            - containerPort: 8080
+              name: vertex
+            - containerPort: 9901
+              name: admin
+          volumeMounts:
+            - name: config
+              mountPath: /etc/praxis
+              readOnly: true
+            - name: vertex-sa
+              mountPath: /etc/vertex-sa
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthy
+              port: 9901
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: praxis-vertex-config
+        - name: vertex-sa
+          secret:
+            secretName: vertex-sa-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: praxis-vertex
+  labels:
+    app: praxis-vertex
+spec:
+  selector:
+    app: praxis-vertex
+  ports:
+    - name: vertex
+      port: 8080
+      targetPort: vertex
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-vertex
+  labels:
+    app: praxis-vertex
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: praxis-vertex
+  port:
+    targetPort: vertex
+  tls:
+    termination: edge

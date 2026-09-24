@@ -96,6 +96,20 @@ if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
+# The dogfood-only Vertex deployment mounts its service-account JSON from a
+# Secret. Preserve existing key material on reruns; rotate only from an
+# explicitly supplied file when ROTATE_SECRETS=true.
+if [[ "$PROFILE" == dogfood ]]; then
+  [[ -n "${VERTEX_PROJECT:-}" ]] || die "VERTEX_PROJECT is required for PROFILE=dogfood"
+  if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true ]]; then
+    [[ -n "${VERTEX_SA_KEY_FILE:-}" && -f "$VERTEX_SA_KEY_FILE" ]] || \
+      die "VERTEX_SA_KEY_FILE must point to the Vertex service-account JSON file to create/rotate vertex-sa-key"
+    oc -n "$NAMESPACE" create secret generic vertex-sa-key \
+      --from-file="sa-key.json=$VERTEX_SA_KEY_FILE" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  fi
+fi
+
 if [[ "$PROFILE" != enmaas ]] && \
   (! secret_exists cnpg-backup-cos || [[ "$ROTATE_SECRETS" == true ]]); then
   for name in COS_ACCESS_KEY_ID COS_SECRET_ACCESS_KEY; do
@@ -167,11 +181,14 @@ if [[ -n "$binding_name" ]] && \
 fi
 
 oc kustomize "$PROFILE_DIR" |
-  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT}" | oc apply -f -
+  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${VERTEX_PROJECT}" | oc apply -f -
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
+if [[ "$PROFILE" == dogfood ]]; then
+  oc -n "$NAMESPACE" rollout status deployment/praxis-vertex --timeout=180s
+fi
 
 printf '\nPriceTag deployed to %s (%s)\n' "$NAMESPACE" "$PROFILE"
 oc -n "$NAMESPACE" get pods
