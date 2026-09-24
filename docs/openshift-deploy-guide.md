@@ -226,7 +226,10 @@ export CONFIRM_DEPLOYMENT=true
 Run this from the repository containing the mirrored EnMaaS image tags. The script
 creates the namespace, CRDs, CNPG operator, database, applications, and Routes in that
 target only. It does not build images, create the AWS bucket, create the IAM role, copy
-production data, or migrate production secrets automatically.
+production data, or migrate production secrets automatically. MaaS governance CRs are
+intentionally not applied because this profile does not deploy the MaaS controller.
+The EnMaaS overlay uses the fork-built MaaS API image with
+`MAAS_SUBSCRIPTION_MODE=standalone`; dogfood and test retain enforced subscription mode.
 
 ---
 
