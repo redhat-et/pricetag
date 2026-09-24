@@ -74,7 +74,7 @@
 | AWS region and OIDC issuer (AWS/ROSA) | The cluster region, OIDC issuer, and IAM role must be known before deployment. |
 | Private S3 bucket | Same region as the cluster, versioning enabled, all public access blocked, and server-side encryption enabled. |
 | CNPG backup IAM role | Trusted only by `system:serviceaccount:enmaas:aigateway-pg`; the EnMaaS manifest uses `inheritFromIAMRole`, never static AWS keys. |
-| Provider egress | praxis dials `api.anthropic.com:443` / `api.openai.com:443`; the optional Vertex dogfood deployment also needs `aiplatform.googleapis.com:443` and OAuth token egress. Verify from a pod in the target namespace. |
+| Provider egress | praxis dials `api.anthropic.com:443` / `api.openai.com:443`; the EnMaaS Vertex deployment also needs `aiplatform.googleapis.com:443` and OAuth token egress. Verify from a pod in the target namespace. |
 | Provider API keys | A real Anthropic key and (optionally) OpenAI key. These go in one Secret; praxis injects them upstream. |
 | Component images | Approved component images must already exist in the target registry. The EnMaaS profile uses mirrored `practice-*` tags; `deploy.sh` does not build images. |
 | Source inputs | Approved component images or pinned source revisions. The three required MaaS CRDs are vendored under `deploy/openshift/crds/`. |
@@ -107,9 +107,6 @@ LITELLM_API_KEY=⟨real LiteLLM key, or empty⟩
 CB_LITELLM_API_KEY=⟨real curvebender/LiteLLM key, or empty⟩
 QWEN_ENDPOINT=⟨self-hosted Qwen endpoint hostname⟩
 CB_GLM_ENDPOINT=⟨GLM/LiteLLM endpoint hostname⟩
-# Dogfood Vertex pilot: GCP project ID; key file is used only to create the Secret.
-VERTEX_PROJECT=⟨GCP project ID⟩
-VERTEX_SA_KEY_FILE=⟨path to service-account JSON key file⟩
 # IBM COS credentials; required for dogfood/test, omitted for enmaas.
 COS_ACCESS_KEY_ID=⟨COS access key⟩
 COS_SECRET_ACCESS_KEY=⟨COS secret key⟩
@@ -208,8 +205,8 @@ oc get --raw /.well-known/openid-configuration
 `deploy.sh` requires a dedicated target kubeconfig and refuses the production API server.
 It also requires the target server, profile, namespace, storage class, object-store values,
 provider keys, model endpoint hostnames, admin lists, and `CONFIRM_DEPLOYMENT=true`. The
-dogfood profile additionally requires `VERTEX_PROJECT`; on first install or intentional key
-rotation it requires `VERTEX_SA_KEY_FILE`.
+EnMaaS profile additionally requires `VERTEX_PROJECT` and `VERTEX_IMAGE_TAG`; on first
+install or intentional key rotation it requires `VERTEX_SA_KEY_FILE`.
 The EnMaaS invocation is:
 
 ```bash
@@ -223,6 +220,10 @@ export AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/pricetag-enmaas-cnpg-backup
 export COS_BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
 export COS_ENDPOINT=https://s3.us-west-2.amazonaws.com
 export COS_REGION=us-west-2
+export VERTEX_PROJECT=<gcp-project-id>
+export VERTEX_IMAGE_TAG=practice-<immutable-feature-image-sha>
+# Required only to create vertex-sa-key on first install or rotate it:
+export VERTEX_SA_KEY_FILE=/secure/path/to/service-account.json
 export CONFIRM_DEPLOYMENT=true
 
 ./deploy/openshift/deploy.sh
@@ -233,25 +234,29 @@ creates the namespace, CRDs, CNPG operator, database, applications, and Routes i
 target only. It does not build images, create the AWS bucket, create the IAM role, copy
 production data, or migrate production secrets automatically.
 
-### 3.3 Dogfood Vertex pilot
+### 3.3 EnMaaS Vertex deployment
 
-The dogfood overlay can run an isolated Vertex gateway deployment at the
-`ai-gateway-vertex` Route. Other profiles do not include these resources. Before
-deploying the dogfood profile:
+The EnMaaS overlay adds an isolated, one-replica Vertex gateway deployment and
+the `ai-gateway-vertex` Route. It does not change the existing Praxis listeners
+or routes. Other profiles do not include these resources.
 
-1. Merge the gateway support PRs and publish the `praxis-ai:vertex` image with
-   the `gcp-adc-filter` Cargo feature enabled. `deploy.sh` does not build images.
-2. Set `VERTEX_PROJECT` to the project used by the service account.
-3. Set `VERTEX_SA_KEY_FILE` to the service-account JSON file for initial Secret
-   creation. The deploy script creates `vertex-sa-key` from that file and
-   preserves the Secret on later runs. To rotate it, set `ROTATE_SECRETS=true`
-   and provide the new file. The key contents are never placed in a manifest.
+Before deploying EnMaaS Vertex:
 
-The gateway accepts Anthropic Messages requests using model IDs such as
-`vertex/claude-sonnet-4-5`. It authenticates PriceTag API keys, applies the
-dogfood model-access policy, and records usage with source `praxis-ai-vertex`.
-The listener is isolated in its own one-replica deployment; it does not change
-the existing Praxis listeners or routes.
+1. Merge the gateway support PRs and publish a feature-enabled Praxis image,
+   built with the `gcp-adc-filter` Cargo feature. Mirror it into the EnMaaS
+   registry as an immutable `practice-*` tag and set `VERTEX_IMAGE_TAG` to that
+   tag. `deploy.sh` does not build or mirror images.
+2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
+3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
+   JSON file. The deploy script creates `vertex-sa-key` from that file and
+   preserves the Secret on later runs. To rotate it, set
+   `ROTATE_SECRETS=true` and provide the replacement file. Key contents are
+   never placed in a manifest.
+
+This is the initial key-file credential path; GCP Workload Identity Federation
+is not included. Requests use Anthropic Messages model IDs such as
+`vertex/claude-sonnet-4-5`, are authenticated by PriceTag API keys, pass through
+the EnMaaS model-access policy, and meter under source `praxis-ai-vertex`.
 
 ---
 

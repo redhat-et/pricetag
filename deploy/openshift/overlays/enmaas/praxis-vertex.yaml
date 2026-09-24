@@ -99,7 +99,7 @@ spec:
     spec:
       containers:
         - name: praxis-vertex
-          image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai:vertex
+          image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai-vertex:vertex
           args: ["-c", "/etc/praxis/praxis.yaml"]
           ports:
             - containerPort: 8080
