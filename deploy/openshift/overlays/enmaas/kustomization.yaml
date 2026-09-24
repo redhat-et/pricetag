@@ -11,13 +11,10 @@ resources:
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/maas-api
-    newTag: latest
+    newTag: practice-f6359f85
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
-    newTag: latest
+    newTag: practice-05e9d104
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
-    newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/llm-katan
-    newName: image-registry.openshift-image-registry.svc:5000/enmaas/llm-katan
-    newTag: latest
+    newTag: practice-9be8880c
