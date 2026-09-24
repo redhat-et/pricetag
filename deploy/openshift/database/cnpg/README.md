@@ -15,6 +15,11 @@ ships as a plain manifest with public ghcr images, so that's what we run:
 installs cluster-scoped into `cnpg-system` and reconciles Clusters in every
 namespace, so no OperatorGroup is involved.
 
+The vendored manifest has one OpenShift-specific compatibility change: the
+controller's fixed upstream UID/GID is omitted. OpenShift's restricted SCC
+assigns a namespace-scoped UID; applying the unmodified upstream manifest
+leaves the controller at `0/1` with an SCC admission error.
+
 Install:
 
 ```bash
@@ -31,14 +36,16 @@ Note: Postgres images are pinned per-cluster via `spec.imageName`
 version — upgrades are explicit, nothing drifts.
 
 The cluster and scheduled-backup manifests use `${NAMESPACE}`,
-`${STORAGE_CLASS}`, `${COS_BUCKET}`, and `${COS_ENDPOINT}` placeholders. Render
+`${STORAGE_CLASS}`, `${COS_BUCKET}`, `${COS_ENDPOINT}`, and `${COS_REGION}` placeholders. Render
 them with `envsubst` after setting those environment values; never replace them
-with credentials or commit environment-specific secrets.
+with credentials or commit environment-specific secrets. The EnMaaS variant
+also uses `${AWS_ROLE_ARN}` for AWS workload identity.
 
 ## Apply order for the rest
 
 ```bash
-oc apply -f deploy/cnpg/10-cluster.yaml            # needs aigateway-db-app first (docs/db-backup.md)
+oc apply -f deploy/cnpg/10-cluster.yaml            # IBM COS/static credentials
+# EnMaaS uses 10-cluster-enmaas.yaml instead; it uses the CNPG ServiceAccount role.
 oc apply -f deploy/cnpg/20-scheduled-backup.yaml
 # 30-restore-job.yaml is one-shot, cutover only — see docs/db-backup.md
 ```
@@ -50,7 +57,8 @@ Steady state (keep applied):
 | File | What |
 |------|------|
 | `cnpg-operator-1.30.0.yaml` | vendored community operator (see above) |
-| `10-cluster.yaml` | the `aigateway-pg` Cluster (3 instances, WAL+backup config) |
+| `10-cluster.yaml` | the `aigateway-pg` Cluster with static IBM COS credentials |
+| `10-cluster-enmaas.yaml` | the AWS/ROSA workload-identity variant (`inheritFromIAMRole`) |
 | `20-scheduled-backup.yaml` | ScheduledBackup to COS; the RPO story |
 
 Cutover / DR one-shot jobs (`oc create -f`, applied 2026-09-16 for the

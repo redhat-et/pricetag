@@ -36,6 +36,62 @@ restore-job spin-up; any point in time since the oldest base backup is
 restorable, which covers "give me last month's numbers" and
 "restore to right before that bad migration".
 
+## EnMaaS AWS/ROSA backup setup
+
+The EnMaaS practice profile is separate from the IBM Cloud production profile.
+It runs in AWS `us-west-2` and uses the AWS S3 bucket configured by
+`deploy/openshift/database/cnpg/10-cluster-enmaas.yaml`:
+
+Provision or reconcile the AWS prerequisites with
+`deploy/openshift/provision-aws-backup-target.sh` before running `deploy.sh`.
+The provisioner is idempotent and does not delete bucket data or put AWS keys
+in Kubernetes.
+
+| Layer | EnMaaS configuration |
+|---|---|
+| Object store | Private, versioned, SSE-encrypted S3 bucket in `us-west-2` |
+| Retention | 30 days by default via `S3_RETENTION_DAYS`; choose 90/180 days for a longer recovery window |
+| Authentication | IAM role `pricetag-enmaas-cnpg-backup` via OpenShift OIDC workload identity |
+| ServiceAccount | `enmaas/aigateway-pg` |
+| CNPG credentials | `s3Credentials.inheritFromIAMRole: true`; no AWS key Secret |
+| OIDC audience | `openshift` (the token claim is an array; use `ForAnyValue:StringEquals`) |
+| Required IAM actions | Bucket location/list plus object read/write/delete and multipart operations, scoped to the bucket |
+
+The IAM role trust policy must restrict the EnMaaS OIDC provider to the target
+cluster's issuer and:
+
+```text
+aud: openshift
+sub: system:serviceaccount:enmaas:aigateway-pg
+```
+
+Before deploying, verify the bucket, cluster OIDC issuer, `gp3-csi` storage
+class, and role. `deploy.sh` does not create AWS resources or copy AWS
+credentials. After deployment, prove the path end-to-end with a manual backup:
+
+```bash
+oc -n enmaas apply -f - <<'YAML'
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: aigateway-manual-<timestamp>
+spec:
+  cluster:
+    name: aigateway-pg
+YAML
+
+oc -n enmaas get backup aigateway-manual-<timestamp> \
+  -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,DESTINATION:.status.destinationPath'
+oc -n enmaas get cluster aigateway-pg \
+  -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].reason}{"\n"}'
+```
+
+The backup must reach `completed` and continuous archiving must report
+`ContinuousArchivingSuccess`. Do not use the IBM COS Secret or the production
+cutover steps below for EnMaaS. Lifecycle expiration is automatic object
+retention, not a renewal requirement; it does not stop new backups or the
+database, but it does remove restore points older than the configured window.
+
 ## Cutover runbook (old postgresql-0 → aigateway-pg)
 
 All commands from a terminal logged into the cluster (`oc login` done,

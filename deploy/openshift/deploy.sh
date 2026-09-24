@@ -44,6 +44,15 @@ esac
 [[ "$NAMESPACE" == "$expected_namespace" ]] || \
   die "PROFILE=$PROFILE requires NAMESPACE=$expected_namespace"
 
+if [[ "$PROFILE" == enmaas ]]; then
+  : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
+fi
+
+[[ -n "${COS_BUCKET:-}" && -n "${COS_ENDPOINT:-}" && -n "${COS_REGION:-}" ]] || \
+  die "COS_BUCKET, COS_ENDPOINT, and COS_REGION are required for the CNPG profile"
+oc get storageclass "$STORAGE_CLASS" >/dev/null 2>&1 || \
+  die "storage class not found: $STORAGE_CLASS"
+
 secret_exists() { oc -n "$NAMESPACE" get secret "$1" >/dev/null 2>&1; }
 config_exists() { oc -n "$NAMESPACE" get configmap "$1" >/dev/null 2>&1; }
 
@@ -87,7 +96,8 @@ if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
-if ! secret_exists cnpg-backup-cos || [[ "$ROTATE_SECRETS" == true ]]; then
+if [[ "$PROFILE" != enmaas ]] && \
+  (! secret_exists cnpg-backup-cos || [[ "$ROTATE_SECRETS" == true ]]); then
   for name in COS_ACCESS_KEY_ID COS_SECRET_ACCESS_KEY; do
     [[ -n "${!name:-}" ]] || die "$name is required to create cnpg-backup-cos"
   done
@@ -122,20 +132,42 @@ fi
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
   oc apply -f "$crd"
 done
-oc apply -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
+# The vendored CNPG CRDs exceed the client-side apply annotation limit.
+# Server-side apply keeps the schema in managed fields instead.
+oc apply --server-side --force-conflicts \
+  --field-manager=pricetag-deploy \
+  -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
 oc -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
 
-[[ -n "${COS_BUCKET:-}" && -n "${COS_ENDPOINT:-}" ]] || \
-  die "COS_BUCKET and COS_ENDPOINT are required for the CNPG profile"
-export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT
-envsubst '${NAMESPACE} ${STORAGE_CLASS} ${COS_BUCKET} ${COS_ENDPOINT}' \
-  < "$SCRIPT_DIR/database/cnpg/10-cluster.yaml" | oc apply -f -
-envsubst '${NAMESPACE}' \
+export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT COS_REGION
+CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster.yaml"
+CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION}"
+if [[ "$PROFILE" == enmaas ]]; then
+  export AWS_ROLE_ARN
+  CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster-enmaas.yaml"
+  CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION} \${AWS_ROLE_ARN}"
+fi
+envsubst "$CNPG_ENV_VARS" < "$CNPG_CLUSTER_MANIFEST" | oc apply -f -
+envsubst "\${NAMESPACE}" \
   < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
-oc -n "$NAMESPACE" wait cluster/aigateway-pg --for=condition=Ready --timeout=10m
+oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
+  --for=condition=Ready --timeout=10m
+
+binding_name=""
+case "$PROFILE" in
+  dogfood) binding_name=pricetag-maas-api-dogfood ;;
+  test) binding_name=pricetag-maas-api-test ;;
+  enmaas) binding_name=pricetag-maas-api-enmaas ;;
+esac
+if [[ -n "$binding_name" ]] && \
+  [[ "$(oc get clusterrolebinding "$binding_name" -o jsonpath='{.roleRef.name}' 2>/dev/null || true)" == maas-api ]]; then
+  # The old manifest used a generic ClusterRole name. Delete only that exact
+  # binding so the immutable roleRef can be recreated with the prefixed role.
+  oc delete clusterrolebinding "$binding_name"
+fi
 
 oc kustomize "$PROFILE_DIR" |
-  envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT}' | oc apply -f -
+  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT}" | oc apply -f -
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s

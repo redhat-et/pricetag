@@ -1,0 +1,50 @@
+# AWS/ROSA variant of the PriceTag database cluster.
+# The generated ServiceAccount uses AWS workload identity for S3 backups;
+# no static access-key Secret is used in this profile.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: aigateway-pg
+  namespace: ${NAMESPACE}
+spec:
+  instances: 3
+
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.12
+
+  serviceAccountTemplate:
+    metadata:
+      name: aigateway-pg
+      annotations:
+        eks.amazonaws.com/role-arn: ${AWS_ROLE_ARN}
+
+  bootstrap:
+    initdb:
+      database: aigateway
+      secret:
+        name: aigateway-db-app
+
+  storage:
+    size: 10Gi
+    storageClassName: ${STORAGE_CLASS}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  env:
+    - name: AWS_REGION
+      value: ${COS_REGION}
+
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://${COS_BUCKET}
+      endpointURL: ${COS_ENDPOINT}
+      s3Credentials:
+        inheritFromIAMRole: true
+      wal:
+        compression: gzip
+        maxParallel: 4

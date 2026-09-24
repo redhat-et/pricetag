@@ -206,7 +206,6 @@ data:
 
           - filter: external_metering
             metering_url: "http://metering-service:8080"
-            # core 0.5.5 blocks filter sub-requests to private IPs by default (SSRF guard)
             allow_private_endpoint: true
             timeout_seconds: 5
             feature_key: "inference-tokens"

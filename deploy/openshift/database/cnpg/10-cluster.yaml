@@ -41,7 +41,7 @@ spec:
   # us-south from the IBM endpoint hostname, so pin it for the in-pod CLI.
   env:
     - name: AWS_REGION
-      value: us-south
+      value: ${COS_REGION}
 
   backup:
     barmanObjectStore:

@@ -21,7 +21,7 @@
 ```
                         ┌────────────────────────── Routes (edge TLS) ──────────────────────────┐
  Claude Code ──────────►│ ai-gateway-unified-<ns>.<appsDomain>   (single URL, /model switching)  │
- Codex / SDKs ─────────►│ ai-gateway-anthropic-… / ai-gateway-openai-… / ai-gateway-benchmark-…  │
+ Codex / SDKs ─────────►│ ai-gateway-anthropic-… / ai-gateway-openai-…                    │
  Browser  ─────────────►│ dashboard-… (PriceTag)                 status-… (static status page)   │
                         └───────┬────────────────────────────────────────────┬───────────────────┘
                                 ▼                                            ▼
@@ -39,7 +39,6 @@
                                 ├──► api.anthropic.com:443   (TLS SNI, pooled)
                                 ├──► api.openai.com:443      (TLS SNI, pooled)
                                 ├──► vLLM / self-hosted backends (optional)
-                                └──► llm-katan:8000          (optional benchmark echo backend)
 ```
 
 ### Components
@@ -50,7 +49,7 @@
 | **maas-api** | MaaS key server — creates/validates `sk-…` API keys, backed by Postgres + MaaS CRDs | [models-as-a-service](https://github.com/opendatahub-io/models-as-a-service) (`maas-api/`) | Go |
 | **metering-service** | **PriceTag** — token-usage billing + admin dashboard. Login = paste your MaaS API key | [pricetag-metering](https://github.com/redhat-et/pricetag-metering) | Go |
 | **postgresql** | Shared DB for maas-api (keys) and metering-service (usage events) | `postgres:16-alpine` | — |
-| **llm-katan** | Optional: synthetic benchmark backend (echo LLM, openai+anthropic dialects) | llm-katan | Python |
+| **llm-katan** | Optional benchmark backend in the dogfood/test profiles; omitted from EnMaaS | llm-katan | Python |
 | **qwen-flash-proxy** | Optional: nginx TLS-terminating hop to an external vLLM route | `nginx:1-alpine` | — |
 
 ### Request flow (the unified route, main user entrypoint)
@@ -69,20 +68,23 @@
 
 | Requirement | Notes |
 |---|---|
-| OpenShift 4.12+ | Any provider (IBM Cloud, AWS, bare metal, ROSA). No operators beyond stock cluster. |
-| `oc` CLI, cluster-admin | `oc login https://<api>:6443 -u <admin>` |
-| Storage class with RWO support | For the Postgres PVC (live env: `ibmc-vpc-block-10iops-tier`). Any RWO class works. |
+| OpenShift 4.22 tested | The current CNPG manifest is SCC-compatible with the EnMaaS OpenShift 4.22 cluster. Other versions need validation. |
+| `oc` CLI, cluster-admin | Use a dedicated target kubeconfig. `deploy.sh` refuses the protected production API server. |
+| Storage class with RWO support | For the Postgres PVC. EnMaaS uses AWS EBS `gp3-csi`; verify with `oc get storageclass`. |
+| AWS region and OIDC issuer (AWS/ROSA) | The cluster region, OIDC issuer, and IAM role must be known before deployment. |
+| Private S3 bucket | Same region as the cluster, versioning enabled, all public access blocked, and server-side encryption enabled. |
+| CNPG backup IAM role | Trusted only by `system:serviceaccount:enmaas:aigateway-pg`; the EnMaaS manifest uses `inheritFromIAMRole`, never static AWS keys. |
 | Egress to `api.anthropic.com:443` / `api.openai.com:443` | praxis dials these directly by DNS name. Verify: `oc run curl --image=curlimages/curl --rm -it -- curl -sI https://api.anthropic.com` in the target namespace. |
 | Provider API keys | A real Anthropic key and (optionally) OpenAI key. These go in one Secret; praxis injects them upstream. |
-| Image build capability | In-cluster `ImageStream` builds (Docker strategy) are used. Or pre-build images elsewhere with Docker/Podman and change the Deployment image refs. |
-| Source inputs | Approved component images or pinned source revisions. The three required MaaS CRDs are vendored under `deploy/openshift/crds/`; llm-katan is optional. |
+| Component images | Approved component images must already exist in the target registry. The EnMaaS profile uses mirrored `practice-*` tags; `deploy.sh` does not build images. |
+| Source inputs | Approved component images or pinned source revisions. The three required MaaS CRDs are vendored under `deploy/openshift/crds/`. |
 | *(optional)* Self-hosted model backends | Any OpenAI- or Anthropic-dialect vLLM endpoint. If none, drop the `vllm`/`qwen-flash` bits from praxis config and model catalog. |
 
 **Not needed** (common false alarm): OpenShift AI / RHOAI, the MaaS controller/operator,
 Istio/Service Mesh, Kuadrant, Gateway API CRDs, Red Hat OpenShift Serverless. The old
 legacy runbook (`docs/dogfood-runbook.md`) uses all of those — it is the **legacy
-architecture**. This guide replaces it entirely; the only operator-free pieces that survive
-are the 3 MaaS CRDs, applied manually in step 4.
+architecture**. This guide replaces it entirely. The deployment installs the vendored
+CloudNativePG operator and the 3 MaaS CRDs; no other platform operators are required.
 
 ---
 
@@ -97,7 +99,7 @@ APPS_DOMAIN=$(oc get dns cluster -o jsonpath='{.spec.baseDomain}')   # e.g. apps
 ADMIN_USERS="alice@redhat.com,bob@redhat.com"                        # PriceTag dashboard admins ⟨pick⟩
 SUPERADMIN_USERS="alice@redhat.com"                                  # platform operators ⟨pick⟩
 STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[0].metadata.name}')   # any RWO-capable class
-MAAS_SECURE=true                                                       # false only for a trusted internal dogfood profile
+MAAS_SECURE=false                                                      # internal HTTP; edge Routes terminate TLS
 MAAS_DEBUG_MODE=false                                                 # enable only for controlled local/test setup
 ANTHROPIC_API_KEY=⟨real Anthropic API key⟩
 OPENAI_API_KEY=⟨real OpenAI API key, or empty⟩
@@ -105,10 +107,14 @@ LITELLM_API_KEY=⟨real LiteLLM key, or empty⟩
 CB_LITELLM_API_KEY=⟨real curvebender/LiteLLM key, or empty⟩
 QWEN_ENDPOINT=⟨self-hosted Qwen endpoint hostname⟩
 CB_GLM_ENDPOINT=⟨GLM/LiteLLM endpoint hostname⟩
+# IBM COS credentials; required for dogfood/test, omitted for enmaas.
 COS_ACCESS_KEY_ID=⟨COS access key⟩
 COS_SECRET_ACCESS_KEY=⟨COS secret key⟩
 COS_BUCKET=⟨environment backup bucket⟩
 COS_ENDPOINT=⟨environment COS endpoint⟩
+COS_REGION=⟨object-store signing region⟩
+# AWS/ROSA workload identity; required for enmaas, omitted for dogfood/test.
+AWS_ROLE_ARN=⟨CNPG backup role ARN⟩
 
 # Generated — never reuse a value from another environment or from git:
 PG_PASSWORD=$(openssl rand -hex 16)
@@ -117,6 +123,110 @@ SESSION_SECRET=$(openssl rand -hex 32)     # PriceTag session-cookie signing key
 
 What the dashboard does with `ADMIN_USERS`: those logins get the admin view (all users,
 key management, impersonation). Everyone else sees only their own usage.
+
+`MAAS_SECURE` controls TLS on the in-cluster MaaS API listener. The current Praxis
+configuration calls `http://maas-api:8080`, so leave it `false` unless you also provision
+and mount a CA-trusted certificate and update every internal client URL. OpenShift Routes
+still terminate external TLS at the edge.
+
+### 3.1 AWS/ROSA prerequisites
+
+The AWS resources are not created by `deploy.sh`; provision and verify them first:
+
+For an AWS/ROSA target, use the idempotent provisioner. It verifies the current
+AWS identity and OIDC provider, creates or reconciles the private/versioned/
+encrypted bucket, and creates or reconciles the least-privilege CNPG role:
+
+```bash
+export AWS_REGION=us-west-2
+export S3_BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
+export OIDC_PROVIDER_HOST=oidc.op1.openshiftapps.com/<cluster-oidc-id>
+export S3_RETENTION_DAYS=30
+./deploy/openshift/provision-aws-backup-target.sh
+```
+
+The role provisioner requires IAM permissions and must be run by an AWS
+administrator. The output `Role` value becomes `AWS_ROLE_ARN` for `deploy.sh`.
+It is safe to rerun; it does not delete bucket data or rotate application
+credentials.
+
+```bash
+AWS_REGION=us-west-2
+BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
+
+aws sts get-caller-identity
+aws s3api head-bucket --bucket "$BUCKET" --region "$AWS_REGION"
+aws s3api get-bucket-location --bucket "$BUCKET"
+aws s3api get-bucket-versioning --bucket "$BUCKET"
+aws s3api get-bucket-encryption --bucket "$BUCKET"
+aws s3api get-public-access-block --bucket "$BUCKET"
+```
+
+The bucket must be in the OpenShift cluster's AWS region, have versioning enabled,
+server-side encryption enabled, block all public access, and expire current and
+noncurrent objects after the configured retention period. Set retention according
+to the recovery requirement; `30` days is the EnMaaS practice default. Do not put
+AWS access keys in a Kubernetes Secret for EnMaaS.
+
+This is an automatic S3 lifecycle policy, not a credential or subscription
+renewal. It does not stop the database or future backups. It removes old base
+backup/WAL objects and therefore limits how far back a restore can go. Increase
+`S3_RETENTION_DAYS` to `90` or `180` for an environment that needs a longer
+historical recovery window.
+
+Create a dedicated IAM role for the CNPG instance ServiceAccount. Its trust policy
+must restrict both the cluster OIDC provider and this subject:
+
+```text
+system:serviceaccount:enmaas:aigateway-pg
+```
+
+For this ROSA/OpenShift cluster, the projected token audience is `openshift`
+(not the EKS default `sts.amazonaws.com`). The trust condition must therefore
+use `ForAnyValue:StringEquals` for `<oidc-provider-host>:aud = openshift`
+because OpenShift emits `aud` as an array, and `StringEquals` for
+`<oidc-provider-host>:sub = system:serviceaccount:enmaas:aigateway-pg`.
+
+The role needs only `GetBucketLocation`, `ListBucket`, and multipart/object read/write/delete
+permissions on the dedicated backup bucket. Set its ARN as `AWS_ROLE_ARN`; the EnMaaS
+CNPG manifest uses `s3Credentials.inheritFromIAMRole: true`.
+
+The cluster must expose an AWS OIDC issuer, have the AWS EBS CSI driver, and provide an
+RWO storage class. Verify the target before deploying:
+
+```bash
+oc whoami --show-server
+oc get storageclass gp3-csi
+oc get --raw /.well-known/openid-configuration
+```
+
+### 3.2 Guarded deploy inputs
+
+`deploy.sh` requires a dedicated target kubeconfig and refuses the production API server.
+It also requires the target server, profile, namespace, storage class, object-store values,
+provider keys, model endpoint hostnames, admin lists, and `CONFIRM_DEPLOYMENT=true`.
+The EnMaaS invocation is:
+
+```bash
+export PROFILE=enmaas
+export NAMESPACE=enmaas
+export STORAGE_CLASS=gp3-csi
+export PRICETAG_KUBECONFIG=/path/to/enmaas-kubeconfig
+export EXPECTED_OC_SERVER=https://<enmaas-api>:443
+export PROTECTED_OC_SERVER=https://<production-api>:<port>
+export AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/pricetag-enmaas-cnpg-backup
+export COS_BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
+export COS_ENDPOINT=https://s3.us-west-2.amazonaws.com
+export COS_REGION=us-west-2
+export CONFIRM_DEPLOYMENT=true
+
+./deploy/openshift/deploy.sh
+```
+
+Run this from the repository containing the mirrored EnMaaS image tags. The script
+creates the namespace, CRDs, CNPG operator, database, applications, and Routes in that
+target only. It does not build images, create the AWS bucket, create the IAM role, copy
+production data, or migrate production secrets automatically.
 
 ---
 
@@ -162,6 +272,7 @@ oc create secret generic maas-db-config -n "$NS" \
   --from-literal=DB_CONNECTION_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
   --dry-run=client -o yaml | oc apply -f -
 
+# dogfood/test only; EnMaaS uses AWS workload identity instead.
 oc create secret generic cnpg-backup-cos -n "$NS" \
   --from-literal=ACCESS_KEY_ID="$COS_ACCESS_KEY_ID" \
   --from-literal=SECRET_ACCESS_KEY="$COS_SECRET_ACCESS_KEY" \
@@ -176,13 +287,18 @@ oc create secret generic cnpg-backup-cos -n "$NS" \
 The supported deployment uses the pinned CloudNativePG operator and a three-
 instance cluster. Do not deploy the retired single-pod PostgreSQL manifests.
 
+The vendored CNPG operator manifest includes the required OpenShift SCC
+compatibility adjustment: it does not pin the controller UID/GID. Do not
+replace it with the raw upstream manifest.
+
 ```bash
 oc apply -f deploy/openshift/database/cnpg/cnpg-operator-1.30.0.yaml
 oc -n cnpg-system wait deploy/cnpg-controller-manager \
   --for=condition=Available --timeout=5m
 
-# Set the environment-specific COS endpoint, bucket, storage class, and
-# generated application secret before applying these manifests.
+# Set the environment-specific object-store endpoint, bucket, storage class,
+# and generated application secret before applying these manifests. EnMaaS
+# uses 10-cluster-enmaas.yaml and AWS_ROLE_ARN instead of static credentials.
 oc apply -f deploy/openshift/database/cnpg/10-cluster.yaml
 oc apply -f deploy/openshift/database/cnpg/20-scheduled-backup.yaml
 oc -n "$NS" wait cluster/aigateway-pg --for=condition=Ready --timeout=10m
@@ -214,6 +330,13 @@ never resolves, so its absence is fine.)
 maas-api reads the `maas-db-config` secret, namespaces, and the MaaS CRs through the
 K8s API, so it needs a dedicated ServiceAccount with a **ClusterRole** (namespaces are
 cluster-scoped reads):
+
+The ServiceAccount is namespaced as `maas-api`; the cluster-scoped role is named
+`pricetag-maas-api` to avoid collisions with another MaaS installation. During
+the migration from the old generic role name, `deploy.sh` removes the old
+profile binding when it points at `maas-api`. It does not delete an unreferenced
+old ClusterRole automatically; inspect ownership before cleaning one up on a
+shared cluster.
 
 ```yaml
 apiVersion: v1
@@ -354,7 +477,7 @@ spec:
 ### 4.7 praxis (gateway) — config, build, deploy, routes
 
 **Config** — the full live `praxis.yaml` is long; this is the complete template with
-all four chains. Replace `⟨…⟩` items. The `vllm` cluster endpoint `10.240.0.10:8000` in
+the three standard chains. Replace `⟨…⟩` items. The `vllm` cluster endpoint `10.240.0.10:8000` in
 the live env is a node-internal address — substitute your own self-hosted backend or
 delete the `vllm`/`qwen-flash` routes+clusters and their catalog entries.
 
@@ -371,7 +494,6 @@ data:
     listeners:
       - { name: anthropic, address: "0.0.0.0:8080", filter_chains: [anthropic] }
       - { name: openai,    address: "0.0.0.0:8081", filter_chains: [openai] }
-      - { name: benchmark, address: "0.0.0.0:8082", filter_chains: [benchmark] }
       - { name: unified,   address: "0.0.0.0:8084", filter_chains: [unified] }
     filter_chains:
       # ---- anthropic-only chain ----
@@ -425,17 +547,6 @@ data:
                 tls: { sni: "api.openai.com" }
                 idle_timeout_ms: 45000
                 endpoints: ["api.openai.com:443"]
-      # ---- benchmark chain: same auth, routes to llm-katan, injects static key ----
-      - name: benchmark
-        filters:
-          - { filter: api_key_auth, validate_url: "http://maas-api:8080/internal/v1/api-keys/validate", token_header: "x-api-key", cache_ttl_seconds: 300, timeout_seconds: 5 }
-          - { filter: identity_header_guard, prefix: "x-tenant-" }
-          - { filter: router, routes: [ { path_prefix: "/", cluster: llm-katan } ] }
-          - { filter: external_metering, metering_url: "http://metering-service:8080", timeout_seconds: 5, feature_key: "inference-tokens", source: "praxis-ai-benchmark", fail_open: true, identity_header_prefix: "x-tenant-", default_model: "unknown" }
-          - { filter: token_count, provider: anthropic }
-          - { filter: token_usage_headers }
-          - { filter: headers, request_set: [ { name: "x-api-key", value: "llm-katan-anthropic-key" }, { name: "anthropic-version", value: "2023-06-01" } ] }
-          - { filter: load_balancer, clusters: [ { name: llm-katan, endpoints: ["llm-katan:8000"] } ] }
       # ---- unified: Anthropic-dialect, one URL, model-name routing ----
       - name: unified
         filters:
@@ -501,7 +612,6 @@ spec:
         ports:
         - { containerPort: 8080, name: anthropic }
         - { containerPort: 8081, name: openai }
-        - { containerPort: 8082, name: benchmark }
         - { containerPort: 8084, name: unified }
         - { containerPort: 9901, name: admin }
         envFrom:
@@ -522,7 +632,6 @@ spec:
   ports:
   - { name: anthropic, port: 8080, targetPort: anthropic }
   - { name: openai,    port: 8081, targetPort: openai }
-  - { name: benchmark, port: 8082, targetPort: benchmark }
   - { name: unified,   port: 8084, targetPort: unified }
   - { name: admin,     port: 9901, targetPort: admin }
   selector: { app: praxis }
@@ -623,11 +732,6 @@ spec: { to: { kind: Service, name: praxis }, port: { targetPort: openai }, tls: 
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
-metadata: { name: ai-gateway-benchmark }
-spec: { to: { kind: Service, name: praxis }, port: { targetPort: benchmark }, tls: { termination: edge } }
----
-apiVersion: route.openshift.io/v1
-kind: Route
 metadata: { name: dashboard }
 spec: { to: { kind: Service, name: metering-service }, port: { targetPort: 8080 }, tls: { termination: edge } }
 ```
@@ -637,7 +741,9 @@ spec: { to: { kind: Service, name: metering-service }, port: { targetPort: 8080 
 - **llm-katan** (benchmark echo backend): build from llm-katan repo root (`Containerfile`,
   Python). Deploy `llm-katan` Deployment+Service on port 8000 with args like
   `--model=benchmark-echo --backend=echo --providers=openai,anthropic --port=8000
-  --ttft-ms=800 --itl-ms=15 --error-rate=0 --max-concurrent=100 --disable-dashboard`.
+  --ttft-ms=800 --itl-ms=15 --error-rate=0 --max-concurrent=100 --disable-dashboard`,
+  then add the benchmark listener, filter chain, Praxis ports, and Route from the
+  dogfood/test profile. EnMaaS removes those resources by default.
 - **qwen-flash-proxy / vllm**: whatever backend you self-host. If it's reachable by
   hostname over the network, point the praxis `load_balancer` cluster at it directly —
   the nginx hop in the live env exists only because that vLLM is on a different cluster
