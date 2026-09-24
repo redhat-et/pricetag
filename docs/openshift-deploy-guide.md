@@ -242,10 +242,14 @@ or routes. Other profiles do not include these resources.
 
 Before deploying EnMaaS Vertex:
 
-1. Merge the gateway support PRs and publish a feature-enabled Praxis image,
-   built with the `gcp-adc-filter` Cargo feature. Mirror it into the EnMaaS
-   registry as an immutable `practice-*` tag and set `VERTEX_IMAGE_TAG` to that
-   tag. `deploy.sh` does not build or mirror images.
+1. Wait until the GCP key-file credentials, Vertex dialect filter, and
+   `token_count` StreamBuffer fix are merged. Build from a pushed `praxis-proxy/ai`
+   `main` commit containing all three, with
+   `PRAXIS_AI_FEATURES=full,gcp-adc-filter`. Record the source commit and built
+   image digest from the build record. Mirror that same digest into EnMaaS as an
+   immutable `practice-<source-sha>` tag and set `VERTEX_IMAGE_TAG` to it.
+   `deploy.sh` does not build or mirror images; never point this Deployment at
+   the ordinary `praxis-ai` image unless it was built with the GCP feature.
 2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
 3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
    JSON file. The deploy script creates `vertex-sa-key` from that file and
