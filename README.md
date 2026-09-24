@@ -9,6 +9,12 @@ Start with the [full OpenShift deployment guide](docs/openshift-deploy-guide.md)
 It covers namespace setup, secrets, CloudNativePG, MaaS API integration, gateway
 deployment, routes, smoke tests, backups, and recovery.
 
+The deploy script is deliberately guarded. It requires a dedicated
+`PRICETAG_KUBECONFIG`, an `EXPECTED_OC_SERVER`, the separately configured
+`PROTECTED_OC_SERVER` for the team deployment, and `CONFIRM_DEPLOYMENT=true`.
+It aborts before any write if the kubeconfig points at the protected production
+server or the server does not match the expected target.
+
 Deployment inputs are environment-specific. Never commit provider keys,
 database passwords, session secrets, kubeconfigs, or generated API keys.
 

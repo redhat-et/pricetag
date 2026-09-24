@@ -14,9 +14,24 @@ UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
+: "${PRICETAG_KUBECONFIG:?Set PRICETAG_KUBECONFIG to a dedicated new-cluster kubeconfig}"
+: "${EXPECTED_OC_SERVER:?Set EXPECTED_OC_SERVER to the new cluster API server}"
+: "${PROTECTED_OC_SERVER:?Set PROTECTED_OC_SERVER to the production API server}"
+: "${CONFIRM_DEPLOYMENT:?Set CONFIRM_DEPLOYMENT=true after checking the target}"
+export KUBECONFIG="$PRICETAG_KUBECONFIG"
+
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
+[[ -f "$PRICETAG_KUBECONFIG" ]] || die "PRICETAG_KUBECONFIG does not point to a file"
+
 oc whoami >/dev/null 2>&1 || die "not logged in to OpenShift"
+ACTUAL_OC_SERVER="$(oc whoami --show-server)"
+[[ "$ACTUAL_OC_SERVER" == "$EXPECTED_OC_SERVER" ]] || \
+  die "connected server is $ACTUAL_OC_SERVER, expected $EXPECTED_OC_SERVER"
+[[ "$ACTUAL_OC_SERVER" != "$PROTECTED_OC_SERVER" ]] || \
+  die "refusing to mutate the protected production server"
+[[ "$CONFIRM_DEPLOYMENT" == "true" ]] || \
+  die "set CONFIRM_DEPLOYMENT=true only after verifying the target cluster"
 command -v envsubst >/dev/null || die "envsubst not found"
 [[ -d "$PROFILE_DIR" ]] || die "unknown profile: $PROFILE"
 
