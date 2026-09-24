@@ -18,6 +18,3 @@ images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/pricetag-test/praxis-ai
     newTag: latest
-  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/llm-katan
-    newName: image-registry.openshift-image-registry.svc:5000/pricetag-test/llm-katan
-    newTag: latest

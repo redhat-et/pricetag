@@ -28,7 +28,12 @@ The intended profiles are:
 The deploy script preserves existing generated Secrets and ConfigMaps. Set
 `ROTATE_SECRETS=true` only for an intentional credential rotation; otherwise a
 second run reuses the existing database password, session secret, provider
-credentials, and COS credentials.
+credentials, and object-store configuration. The `enmaas` profile uses AWS
+OIDC workload identity for CNPG backups and never creates static AWS/COS keys.
+
+For AWS/ROSA profiles, run `deploy/openshift/provision-aws-backup-target.sh`
+before `deploy.sh` to reconcile the private backup bucket and least-privilege
+CNPG IAM role.
 
 ## Repository Layout
 

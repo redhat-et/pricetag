@@ -23,11 +23,6 @@ data:
         filter_chains:
           - openai
 
-      - name: benchmark
-        address: "0.0.0.0:8082"
-        filter_chains:
-          - benchmark
-
       # Unified Anthropic-dialect route: ONE URL for Claude Code, model-based
       # routing to multiple backends. Claude Code always speaks /v1/messages,
       # and Anthropic + Qwen (vLLM) both serve it natively, so /model can switch
@@ -187,51 +182,6 @@ data:
                 idle_timeout_ms: 45000
                 endpoints:
                   - "api.openai.com:443"
-
-      - name: benchmark
-        filters:
-          - filter: api_key_auth
-            validate_url: "http://maas-api:8080/internal/v1/api-keys/validate"
-            token_header: "x-api-key"
-            cache_ttl_seconds: 300
-            timeout_seconds: 5
-
-          - filter: identity_header_guard
-            prefix: "x-tenant-"
-
-          - filter: router
-            routes:
-              - path_prefix: "/"
-                cluster: llm-katan
-
-          - filter: external_metering
-            metering_url: "http://metering-service:8080"
-            # core 0.5.5 blocks filter sub-requests to private IPs by default (SSRF guard)
-            allow_private_endpoint: true
-            timeout_seconds: 5
-            feature_key: "inference-tokens"
-            source: "praxis-ai-benchmark"
-            fail_open: true
-            identity_header_prefix: "x-tenant-"
-            default_model: "unknown"
-
-          - filter: token_count
-            provider: anthropic
-
-          - filter: token_usage_headers
-
-          - filter: headers
-            request_set:
-              - name: "x-api-key"
-                value: "llm-katan-anthropic-key"
-              - name: "anthropic-version"
-                value: "2023-06-01"
-
-          - filter: load_balancer
-            clusters:
-              - name: llm-katan
-                endpoints:
-                  - "llm-katan:8000"
 
       # Unified Anthropic-dialect chain: one route, many models. Same building
       # blocks as the single-provider chains, but with model_to_header + a
@@ -428,8 +378,6 @@ spec:
               name: anthropic
             - containerPort: 8081
               name: openai
-            - containerPort: 8082
-              name: benchmark
             - containerPort: 8084
               name: unified
             - containerPort: 9901
@@ -487,9 +435,6 @@ spec:
     - name: openai
       port: 8081
       targetPort: 8081
-    - name: benchmark
-      port: 8082
-      targetPort: 8082
     - name: unified
       port: 8084
       targetPort: 8084
