@@ -92,6 +92,15 @@ cutover steps below for EnMaaS. Lifecycle expiration is automatic object
 retention, not a renewal requirement; it does not stop new backups or the
 database, but it does remove restore points older than the configured window.
 
+## Isolated production restore rehearsal
+
+Before a cutover, use `deploy/openshift/migrate-production-database-to-isolated-target.sh`.
+It takes an online, consistent `pg_dump` from the protected production primary,
+streams it into a new `aigateway_migration` database in EnMaaS, and compares
+key/user/usage row counts. It refuses the production server as a target and
+refuses to overwrite an existing target database. The live PriceTag database
+and all production workloads remain untouched.
+
 ## Cutover runbook (old postgresql-0 → aigateway-pg)
 
 All commands from a terminal logged into the cluster (`oc login` done,
