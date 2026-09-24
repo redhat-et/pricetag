@@ -101,6 +101,13 @@ key/user/usage row counts. It refuses the production server as a target and
 refuses to overwrite an existing target database. The live PriceTag database
 and all production workloads remain untouched.
 
+When EnMaaS has no traffic and a target replacement is explicitly approved,
+`deploy/openshift/restore-production-database-into-target.sh` performs the
+controlled restore. It creates a target backup and rollback database, scales
+only the EnMaaS application writers down, restores the online dump, repairs
+application-object ownership, and brings the target applications back. It
+never writes to production and requires `CONFIRM_LIVE_TARGET_RESTORE=true`.
+
 ## Cutover runbook (old postgresql-0 → aigateway-pg)
 
 All commands from a terminal logged into the cluster (`oc login` done,
