@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: enmaas
+
+resources:
+  - namespace.yaml
+  - maas-api-rbac-binding.yaml
+  - ../../base
+
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas/maas-api
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/llm-katan
+    newName: image-registry.openshift-image-registry.svc:5000/enmaas/llm-katan
+    newTag: latest

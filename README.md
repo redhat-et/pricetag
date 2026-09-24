@@ -21,6 +21,7 @@ database passwords, session secrets, kubeconfigs, or generated API keys.
 The intended profiles are:
 
 - `test`: isolated namespace and disposable storage.
+- `enmaas`: isolated practice deployment on the separate EnMaaS cluster.
 - `dogfood`: the team deployment profile.
 - `ha`: CloudNativePG, backups, restore, and read-replica operations.
 

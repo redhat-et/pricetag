@@ -38,6 +38,7 @@ command -v envsubst >/dev/null || die "envsubst not found"
 case "$PROFILE" in
   dogfood) expected_namespace=ai-gateway-dogfood ;;
   test) expected_namespace=pricetag-test ;;
+  enmaas) expected_namespace=enmaas ;;
   *) die "unsupported profile: $PROFILE" ;;
 esac
 [[ "$NAMESPACE" == "$expected_namespace" ]] || \
