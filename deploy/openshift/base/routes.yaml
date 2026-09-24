@@ -1,0 +1,88 @@
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-anthropic
+  namespace: ai-gateway-dogfood
+  labels:
+    app: praxis
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: praxis
+  port:
+    targetPort: anthropic
+  tls:
+    termination: edge
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-openai
+  namespace: ai-gateway-dogfood
+  labels:
+    app: praxis
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: praxis
+  port:
+    targetPort: openai
+  tls:
+    termination: edge
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-benchmark
+  namespace: ai-gateway-dogfood
+  labels:
+    app: praxis
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: praxis
+  port:
+    targetPort: benchmark
+  tls:
+    termination: edge
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-unified
+  namespace: ai-gateway-dogfood
+  labels:
+    app: praxis
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: praxis
+  port:
+    targetPort: unified
+  tls:
+    termination: edge
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard
+  namespace: ai-gateway-dogfood
+  labels:
+    app: metering-service
+spec:
+  to:
+    kind: Service
+    name: metering-service
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge

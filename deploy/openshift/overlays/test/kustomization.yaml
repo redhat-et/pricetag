@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: pricetag-test
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
+    newName: image-registry.openshift-image-registry.svc:5000/pricetag-test/maas-api
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    newName: image-registry.openshift-image-registry.svc:5000/pricetag-test/metering-service
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    newName: image-registry.openshift-image-registry.svc:5000/pricetag-test/praxis-ai
+    newTag: latest
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/llm-katan
+    newName: image-registry.openshift-image-registry.svc:5000/pricetag-test/llm-katan
+    newTag: latest

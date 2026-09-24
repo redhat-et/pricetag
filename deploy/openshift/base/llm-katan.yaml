@@ -1,0 +1,78 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-katan
+  namespace: ai-gateway-dogfood
+  labels:
+    app: llm-katan
+spec:
+  # llm-katan runs a single uvicorn worker per pod (Python GIL bound —
+  # a single worker tops out ~13.5ms TTFT at 512 concurrent, ~4.25ms
+  # with parallelism). Multiple replicas give the benchmark backend
+  # separate Python processes (separate GILs) behind the Service so it
+  # doesn't become the bottleneck when measuring gateway overhead.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-katan
+  template:
+    metadata:
+      labels:
+        app: llm-katan
+    spec:
+      containers:
+        - name: llm-katan
+          image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/llm-katan:latest
+          args:
+            - "--model=benchmark-echo"
+            - "--backend=echo"
+            - "--providers=openai,anthropic"
+            - "--port=8000"
+            - "--ttft-ms=800"
+            - "--itl-ms=15"
+            - "--error-rate=0"
+            - "--max-concurrent=100"
+            - "--disable-dashboard"
+          env:
+            - name: LLM_KATAN_PORT
+              value: "8000"
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              # One core per pod so a single uvicorn worker isn't
+              # CPU-throttled under benchmark load.
+              cpu: "1"
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-katan
+  namespace: ai-gateway-dogfood
+  labels:
+    app: llm-katan
+spec:
+  selector:
+    app: llm-katan
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

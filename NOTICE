@@ -1,0 +1,14 @@
+PriceTag
+Copyright Red Hat, Inc.
+
+This repository contains deployment and operational material assembled from
+the following separately licensed projects:
+
+- Praxis AI — MIT License — https://github.com/praxis-proxy/ai
+- Praxis — Apache License 2.0 — https://github.com/praxis-proxy/praxis
+- Models as a Service — Apache License 2.0 — https://github.com/opendatahub-io/models-as-a-service
+- LLM Katan — Apache License 2.0
+- PriceTag metering service — Apache License 2.0 — https://github.com/redhat-et/pricetag-metering
+
+This repository does not redistribute the source histories of those projects.
+Their licenses remain applicable to their respective source and binaries.
