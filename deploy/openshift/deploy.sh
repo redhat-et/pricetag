@@ -150,7 +150,21 @@ fi
 envsubst "$CNPG_ENV_VARS" < "$CNPG_CLUSTER_MANIFEST" | oc apply -f -
 envsubst "\${NAMESPACE}" \
   < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
-oc -n "$NAMESPACE" wait cluster/aigateway-pg --for=condition=Ready --timeout=10m
+oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
+  --for=condition=Ready --timeout=10m
+
+binding_name=""
+case "$PROFILE" in
+  dogfood) binding_name=pricetag-maas-api-dogfood ;;
+  test) binding_name=pricetag-maas-api-test ;;
+  enmaas) binding_name=pricetag-maas-api-enmaas ;;
+esac
+if [[ -n "$binding_name" ]] && \
+  [[ "$(oc get clusterrolebinding "$binding_name" -o jsonpath='{.roleRef.name}' 2>/dev/null || true)" == maas-api ]]; then
+  # The old manifest used a generic ClusterRole name. Delete only that exact
+  # binding so the immutable roleRef can be recreated with the prefixed role.
+  oc delete clusterrolebinding "$binding_name"
+fi
 
 oc kustomize "$PROFILE_DIR" |
   envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT}" | oc apply -f -

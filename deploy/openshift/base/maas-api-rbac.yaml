@@ -6,7 +6,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: maas-api
+  name: pricetag-maas-api
 rules:
   - apiGroups: [""]
     resourceNames: [maas-db-config]

@@ -18,3 +18,52 @@ images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
     newTag: practice-9be8880c
+
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: llm-katan
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: llm-katan
+  - target:
+      version: v1
+      kind: Service
+      name: llm-katan
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: llm-katan
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-benchmark
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-benchmark
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/2
+  - target:
+      version: v1
+      kind: Service
+      name: praxis
+    patch: |-
+      - op: remove
+        path: /spec/ports/2

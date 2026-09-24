@@ -49,7 +49,7 @@
 | **maas-api** | MaaS key server — creates/validates `sk-…` API keys, backed by Postgres + MaaS CRDs | [models-as-a-service](https://github.com/opendatahub-io/models-as-a-service) (`maas-api/`) | Go |
 | **metering-service** | **PriceTag** — token-usage billing + admin dashboard. Login = paste your MaaS API key | [pricetag-metering](https://github.com/redhat-et/pricetag-metering) | Go |
 | **postgresql** | Shared DB for maas-api (keys) and metering-service (usage events) | `postgres:16-alpine` | — |
-| **llm-katan** | Not deployed by the current profiles; its standalone manifest is retained for optional benchmarks | llm-katan | Python |
+| **llm-katan** | Optional benchmark backend in the dogfood/test profiles; omitted from EnMaaS | llm-katan | Python |
 | **qwen-flash-proxy** | Optional: nginx TLS-terminating hop to an external vLLM route | `nginx:1-alpine` | — |
 
 ### Request flow (the unified route, main user entrypoint)
@@ -141,6 +141,7 @@ encrypted bucket, and creates or reconciles the least-privilege CNPG role:
 export AWS_REGION=us-west-2
 export S3_BUCKET=pricetag-enmaas-cnpg-<account-id>-usw2
 export OIDC_PROVIDER_HOST=oidc.op1.openshiftapps.com/<cluster-oidc-id>
+export S3_RETENTION_DAYS=30
 ./deploy/openshift/provision-aws-backup-target.sh
 ```
 
@@ -162,8 +163,10 @@ aws s3api get-public-access-block --bucket "$BUCKET"
 ```
 
 The bucket must be in the OpenShift cluster's AWS region, have versioning enabled,
-server-side encryption enabled, and block all public access. Do not put AWS access
-keys in a Kubernetes Secret for EnMaaS.
+server-side encryption enabled, block all public access, and expire current and
+noncurrent objects after the configured retention period. Set retention according
+to the recovery requirement; `30` days is the EnMaaS practice default. Do not put
+AWS access keys in a Kubernetes Secret for EnMaaS.
 
 Create a dedicated IAM role for the CNPG instance ServiceAccount. Its trust policy
 must restrict both the cluster OIDC provider and this subject:
@@ -322,6 +325,13 @@ maas-api reads the `maas-db-config` secret, namespaces, and the MaaS CRs through
 K8s API, so it needs a dedicated ServiceAccount with a **ClusterRole** (namespaces are
 cluster-scoped reads):
 
+The ServiceAccount is namespaced as `maas-api`; the cluster-scoped role is named
+`pricetag-maas-api` to avoid collisions with another MaaS installation. During
+the migration from the old generic role name, `deploy.sh` removes the old
+profile binding when it points at `maas-api`. It does not delete an unreferenced
+old ClusterRole automatically; inspect ownership before cleaning one up on a
+shared cluster.
+
 ```yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -461,7 +471,7 @@ spec:
 ### 4.7 praxis (gateway) — config, build, deploy, routes
 
 **Config** — the full live `praxis.yaml` is long; this is the complete template with
-all four chains. Replace `⟨…⟩` items. The `vllm` cluster endpoint `10.240.0.10:8000` in
+the three standard chains. Replace `⟨…⟩` items. The `vllm` cluster endpoint `10.240.0.10:8000` in
 the live env is a node-internal address — substitute your own self-hosted backend or
 delete the `vllm`/`qwen-flash` routes+clusters and their catalog entries.
 
@@ -478,7 +488,6 @@ data:
     listeners:
       - { name: anthropic, address: "0.0.0.0:8080", filter_chains: [anthropic] }
       - { name: openai,    address: "0.0.0.0:8081", filter_chains: [openai] }
-      - { name: benchmark, address: "0.0.0.0:8082", filter_chains: [benchmark] }
       - { name: unified,   address: "0.0.0.0:8084", filter_chains: [unified] }
     filter_chains:
       # ---- anthropic-only chain ----
@@ -532,17 +541,6 @@ data:
                 tls: { sni: "api.openai.com" }
                 idle_timeout_ms: 45000
                 endpoints: ["api.openai.com:443"]
-      # ---- benchmark chain: same auth, routes to llm-katan, injects static key ----
-      - name: benchmark
-        filters:
-          - { filter: api_key_auth, validate_url: "http://maas-api:8080/internal/v1/api-keys/validate", token_header: "x-api-key", cache_ttl_seconds: 300, timeout_seconds: 5 }
-          - { filter: identity_header_guard, prefix: "x-tenant-" }
-          - { filter: router, routes: [ { path_prefix: "/", cluster: llm-katan } ] }
-          - { filter: external_metering, metering_url: "http://metering-service:8080", timeout_seconds: 5, feature_key: "inference-tokens", source: "praxis-ai-benchmark", fail_open: true, identity_header_prefix: "x-tenant-", default_model: "unknown" }
-          - { filter: token_count, provider: anthropic }
-          - { filter: token_usage_headers }
-          - { filter: headers, request_set: [ { name: "x-api-key", value: "llm-katan-anthropic-key" }, { name: "anthropic-version", value: "2023-06-01" } ] }
-          - { filter: load_balancer, clusters: [ { name: llm-katan, endpoints: ["llm-katan:8000"] } ] }
       # ---- unified: Anthropic-dialect, one URL, model-name routing ----
       - name: unified
         filters:
@@ -608,7 +606,6 @@ spec:
         ports:
         - { containerPort: 8080, name: anthropic }
         - { containerPort: 8081, name: openai }
-        - { containerPort: 8082, name: benchmark }
         - { containerPort: 8084, name: unified }
         - { containerPort: 9901, name: admin }
         envFrom:
@@ -629,7 +626,6 @@ spec:
   ports:
   - { name: anthropic, port: 8080, targetPort: anthropic }
   - { name: openai,    port: 8081, targetPort: openai }
-  - { name: benchmark, port: 8082, targetPort: benchmark }
   - { name: unified,   port: 8084, targetPort: unified }
   - { name: admin,     port: 9901, targetPort: admin }
   selector: { app: praxis }
@@ -730,11 +726,6 @@ spec: { to: { kind: Service, name: praxis }, port: { targetPort: openai }, tls: 
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
-metadata: { name: ai-gateway-benchmark }
-spec: { to: { kind: Service, name: praxis }, port: { targetPort: benchmark }, tls: { termination: edge } }
----
-apiVersion: route.openshift.io/v1
-kind: Route
 metadata: { name: dashboard }
 spec: { to: { kind: Service, name: metering-service }, port: { targetPort: 8080 }, tls: { termination: edge } }
 ```
@@ -744,7 +735,9 @@ spec: { to: { kind: Service, name: metering-service }, port: { targetPort: 8080 
 - **llm-katan** (benchmark echo backend): build from llm-katan repo root (`Containerfile`,
   Python). Deploy `llm-katan` Deployment+Service on port 8000 with args like
   `--model=benchmark-echo --backend=echo --providers=openai,anthropic --port=8000
-  --ttft-ms=800 --itl-ms=15 --error-rate=0 --max-concurrent=100 --disable-dashboard`.
+  --ttft-ms=800 --itl-ms=15 --error-rate=0 --max-concurrent=100 --disable-dashboard`,
+  then add the benchmark listener, filter chain, Praxis ports, and Route from the
+  dogfood/test profile. EnMaaS removes those resources by default.
 - **qwen-flash-proxy / vllm**: whatever backend you self-host. If it's reachable by
   hostname over the network, point the praxis `load_balancer` cluster at it directly —
   the nginx hop in the live env exists only because that vLLM is on a different cluster

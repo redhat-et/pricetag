@@ -50,13 +50,15 @@ in Kubernetes.
 | Layer | EnMaaS configuration |
 |---|---|
 | Object store | Private, versioned, SSE-encrypted S3 bucket in `us-west-2` |
+| Retention | 30 days by default via `S3_RETENTION_DAYS`; choose a longer period for real recovery requirements |
 | Authentication | IAM role `pricetag-enmaas-cnpg-backup` via OpenShift OIDC workload identity |
 | ServiceAccount | `enmaas/aigateway-pg` |
 | CNPG credentials | `s3Credentials.inheritFromIAMRole: true`; no AWS key Secret |
 | OIDC audience | `openshift` (the token claim is an array; use `ForAnyValue:StringEquals`) |
 | Required IAM actions | Bucket location/list plus object read/write/delete and multipart operations, scoped to the bucket |
 
-The IAM role trust policy must restrict the EnMaaS OIDC provider to:
+The IAM role trust policy must restrict the EnMaaS OIDC provider to the target
+cluster's issuer and:
 
 ```text
 aud: openshift

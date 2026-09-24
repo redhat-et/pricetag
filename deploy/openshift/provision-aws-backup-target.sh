@@ -15,6 +15,9 @@ command -v aws >/dev/null || die "aws CLI is required"
 ROLE_NAME="${ROLE_NAME:-pricetag-enmaas-cnpg-backup}"
 ROLE_SUBJECT="${ROLE_SUBJECT:-system:serviceaccount:enmaas:aigateway-pg}"
 OIDC_AUDIENCE="${OIDC_AUDIENCE:-openshift}"
+S3_RETENTION_DAYS="${S3_RETENTION_DAYS:-30}"
+[[ "$S3_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]] || \
+  die "S3_RETENTION_DAYS must be a positive integer"
 AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 PROVIDER_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER_HOST}"
 
@@ -23,15 +26,28 @@ aws iam get-open-id-connect-provider \
   die "OIDC provider is not registered: $PROVIDER_ARN"
 
 if ! aws s3api head-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" >/dev/null 2>&1; then
+  if aws s3api get-bucket-location --bucket "$S3_BUCKET" --region "$AWS_REGION" >/dev/null 2>&1; then
+    die "bucket exists but head-bucket was denied: $S3_BUCKET"
+  fi
   if [[ "$AWS_REGION" == us-east-1 ]]; then
-    aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION"
+    if ! aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION"; then
+      die "unable to create or access bucket: $S3_BUCKET"
+    fi
   else
-    aws s3api create-bucket \
-      --bucket "$S3_BUCKET" \
-      --region "$AWS_REGION" \
-      --create-bucket-configuration LocationConstraint="$AWS_REGION"
+    if ! aws s3api create-bucket \
+        --bucket "$S3_BUCKET" \
+        --region "$AWS_REGION" \
+        --create-bucket-configuration LocationConstraint="$AWS_REGION"; then
+      die "unable to create or access bucket: $S3_BUCKET"
+    fi
   fi
 fi
+
+BUCKET_REGION="$(aws s3api get-bucket-location --bucket "$S3_BUCKET" \
+  --region "$AWS_REGION" --query LocationConstraint --output text)"
+[[ "$BUCKET_REGION" == None ]] && BUCKET_REGION=us-east-1
+[[ "$BUCKET_REGION" == "$AWS_REGION" ]] || \
+  die "bucket $S3_BUCKET is in $BUCKET_REGION, expected $AWS_REGION"
 
 aws s3api put-public-access-block \
   --bucket "$S3_BUCKET" \
@@ -54,7 +70,7 @@ aws s3api put-bucket-versioning \
 aws s3api put-bucket-lifecycle-configuration \
   --bucket "$S3_BUCKET" \
   --lifecycle-configuration \
-  '{"Rules":[{"ID":"abort-incomplete-multipart-uploads","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":7}}]}'
+  "{\"Rules\":[{\"ID\":\"backup-retention\",\"Status\":\"Enabled\",\"Filter\":{\"Prefix\":\"\"},\"Expiration\":{\"Days\":$S3_RETENTION_DAYS},\"NoncurrentVersionExpiration\":{\"NoncurrentDays\":$S3_RETENTION_DAYS},\"AbortIncompleteMultipartUpload\":{\"DaysAfterInitiation\":7}}]}"
 
 TRUST_FILE="$(mktemp)"
 POLICY_FILE="$(mktemp)"
@@ -126,5 +142,5 @@ aws iam put-role-policy \
   --policy-document "file://$POLICY_FILE"
 
 ROLE_ARN="$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)"
-printf 'AWS backup target ready\nBucket: %s\nRegion: %s\nRole: %s\nSubject: %s\nAudience: %s\n' \
-  "$S3_BUCKET" "$AWS_REGION" "$ROLE_ARN" "$ROLE_SUBJECT" "$OIDC_AUDIENCE"
+printf 'AWS backup target ready\nBucket: %s\nRegion: %s\nRetentionDays: %s\nRole: %s\nSubject: %s\nAudience: %s\n' \
+  "$S3_BUCKET" "$AWS_REGION" "$S3_RETENTION_DAYS" "$ROLE_ARN" "$ROLE_SUBJECT" "$OIDC_AUDIENCE"

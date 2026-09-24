@@ -5,7 +5,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: maas-api
+  name: pricetag-maas-api
 subjects:
   - kind: ServiceAccount
     name: maas-api
