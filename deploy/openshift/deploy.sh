@@ -47,7 +47,8 @@ fi
 
 for required in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_API_KEY \
     CB_LITELLM_API_KEY COS_ACCESS_KEY_ID COS_SECRET_ACCESS_KEY COS_BUCKET \
-    COS_ENDPOINT ADMIN_USERS SUPERADMIN_USERS QWEN_ENDPOINT CB_GLM_ENDPOINT; do
+    COS_ENDPOINT ADMIN_USERS SUPERADMIN_USERS MAAS_SECURE MAAS_DEBUG_MODE \
+    QWEN_ENDPOINT CB_GLM_ENDPOINT; do
     if [[ -z "${!required:-}" ]]; then
         echo "ERROR: $required not set."
         exit 1
@@ -112,6 +113,8 @@ oc -n "$NAMESPACE" create secret generic provider-credentials \
 oc -n "$NAMESPACE" create configmap pricetag-config \
     --from-literal=ADMIN_USERS="$ADMIN_USERS" \
     --from-literal=SUPERADMIN_USERS="$SUPERADMIN_USERS" \
+    --from-literal=MAAS_SECURE="$MAAS_SECURE" \
+    --from-literal=MAAS_DEBUG_MODE="$MAAS_DEBUG_MODE" \
     --dry-run=client -o yaml | oc apply -f -
 
 oc -n "$NAMESPACE" create secret generic pricetag-session \

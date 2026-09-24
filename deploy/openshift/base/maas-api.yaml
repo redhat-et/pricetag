@@ -35,13 +35,21 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: SECURE
-              value: "false"
+              valueFrom:
+                configMapKeyRef:
+                  name: pricetag-config
+                  key: MAAS_SECURE
             - name: MAAS_SUBSCRIPTION_NAMESPACE
-              value: "ai-gateway-dogfood"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: METRICS_PORT
               value: "9090"
             - name: DEBUG_MODE
-              value: "true"
+              valueFrom:
+                configMapKeyRef:
+                  name: pricetag-config
+                  key: MAAS_DEBUG_MODE
           resources:
             requests:
               memory: "64Mi"

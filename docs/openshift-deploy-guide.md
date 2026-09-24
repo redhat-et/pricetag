@@ -95,9 +95,20 @@ default — choose per environment.
 NS=ai-gateway-dogfood                  # namespace ⟨pick⟩ — keep it short, it embeds in route hosts
 APPS_DOMAIN=$(oc get dns cluster -o jsonpath='{.spec.baseDomain}')   # e.g. apps.ocp.example.com
 ADMIN_USERS="alice@redhat.com,bob@redhat.com"                        # PriceTag dashboard admins ⟨pick⟩
+SUPERADMIN_USERS="alice@redhat.com"                                  # platform operators ⟨pick⟩
 STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[0].metadata.name}')   # any RWO-capable class
-ANTHROPIC_KEY=⟨real Anthropic API key⟩
-OPENAI_KEY=⟨real OpenAI API key, or empty⟩
+MAAS_SECURE=true                                                       # false only for a trusted internal dogfood profile
+MAAS_DEBUG_MODE=false                                                 # enable only for controlled local/test setup
+ANTHROPIC_API_KEY=⟨real Anthropic API key⟩
+OPENAI_API_KEY=⟨real OpenAI API key, or empty⟩
+LITELLM_API_KEY=⟨real LiteLLM key, or empty⟩
+CB_LITELLM_API_KEY=⟨real curvebender/LiteLLM key, or empty⟩
+QWEN_ENDPOINT=⟨self-hosted Qwen endpoint hostname⟩
+CB_GLM_ENDPOINT=⟨GLM/LiteLLM endpoint hostname⟩
+COS_ACCESS_KEY_ID=⟨COS access key⟩
+COS_SECRET_ACCESS_KEY=⟨COS secret key⟩
+COS_BUCKET=⟨environment backup bucket⟩
+COS_ENDPOINT=⟨environment COS endpoint⟩
 
 # Generated — never reuse a value from another environment or from git:
 PG_PASSWORD=$(openssl rand -hex 16)
@@ -125,25 +136,35 @@ oc project "$NS"
 ```bash
 # Provider credentials (consumed by praxis, injected upstream)
 oc create secret generic provider-credentials -n "$NS" \
-  --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_KEY" \
-  --from-literal=OPENAI_API_KEY="$OPENAI_KEY" \
+  --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+  --from-literal=LITELLM_API_KEY="$LITELLM_API_KEY" \
+  --from-literal=CB_LITELLM_API_KEY="$CB_LITELLM_API_KEY" \
   --dry-run=client -o yaml | oc apply -f -
 
-# PostgreSQL admin credentials — the DB holds BOTH maas keys and metering events.
-# Keys maas-db-config/metering need: POSTGRES_USER/POSTGRES_DB/POSTGRES_PASSWORD
-# plus two per-app DSNs.
+# CNPG application credentials. The cluster uses the aigateway-pg-rw service.
+oc create secret generic aigateway-db-app -n "$NS" \
+  --from-literal=username=aigateway \
+  --from-literal=password="$PG_PASSWORD" \
+  --dry-run=client -o yaml | oc apply -f -
+
 oc create secret generic postgresql-credentials -n "$NS" \
-  --from-literal=POSTGRES_USER=postgres \
-  --from-literal=POSTGRES_DB=postgres \
+  --from-literal=POSTGRES_USER=aigateway \
+  --from-literal=POSTGRES_DB=aigateway \
   --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
-  --from-literal=MAAS_DB_URL="postgresql://postgres:${PG_PASSWORD}@postgresql:5432/postgres?sslmode=disable" \
-  --from-literal=METERING_DB_URL="postgresql://postgres:${PG_PASSWORD}@postgresql:5432/postgres?sslmode=disable" \
+  --from-literal=MAAS_DB_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
+  --from-literal=METERING_DB_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
   --dry-run=client -o yaml | oc apply -f -
 
 # maas-api reads its DSN from THIS secret via the K8s API (not env vars) —
 # exact name and key are hardcoded in its config loader:
 oc create secret generic maas-db-config -n "$NS" \
-  --from-literal=DB_CONNECTION_URL="postgresql://postgres:${PG_PASSWORD}@postgresql:5432/postgres?sslmode=disable" \
+  --from-literal=DB_CONNECTION_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc create secret generic cnpg-backup-cos -n "$NS" \
+  --from-literal=ACCESS_KEY_ID="$COS_ACCESS_KEY_ID" \
+  --from-literal=SECRET_ACCESS_KEY="$COS_SECRET_ACCESS_KEY" \
   --dry-run=client -o yaml | oc apply -f -
 ```
 
