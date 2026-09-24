@@ -4,8 +4,7 @@
 # Prerequisites:
 #   - oc login to your cluster
 #   - Component images available in the registry configured by the manifests
-#   - ANTHROPIC_API_KEY, OPENAI_API_KEY, LITELLM_API_KEY set in environment
-#   - COS_ACCESS_KEY_ID, COS_SECRET_ACCESS_KEY, COS_BUCKET, COS_ENDPOINT set
+#   - provider keys, COS credentials, admin users, and upstream endpoints set
 #
 # Usage:
 #   export ANTHROPIC_API_KEY="sk-ant-..."
@@ -46,12 +45,17 @@ if [[ -z "${LITELLM_API_KEY:-}" ]]; then
     exit 1
 fi
 
-for required in COS_ACCESS_KEY_ID COS_SECRET_ACCESS_KEY COS_BUCKET COS_ENDPOINT; do
+for required in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_API_KEY \
+    CB_LITELLM_API_KEY COS_ACCESS_KEY_ID COS_SECRET_ACCESS_KEY COS_BUCKET \
+    COS_ENDPOINT ADMIN_USERS SUPERADMIN_USERS QWEN_ENDPOINT CB_GLM_ENDPOINT; do
     if [[ -z "${!required:-}" ]]; then
         echo "ERROR: $required not set."
         exit 1
     fi
 done
+
+command -v envsubst >/dev/null || { echo "ERROR: envsubst not found"; exit 1; }
+SESSION_SECRET="${SESSION_SECRET:-$(openssl rand -hex 32)}"
 
 if [[ ! -d "$PROFILE_DIR" ]]; then
     echo "ERROR: unknown profile: $PROFILE"
@@ -102,6 +106,16 @@ oc -n "$NAMESPACE" create secret generic provider-credentials \
     --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
     --from-literal=LITELLM_API_KEY="$LITELLM_API_KEY" \
+    --from-literal=CB_LITELLM_API_KEY="$CB_LITELLM_API_KEY" \
+    --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NAMESPACE" create configmap pricetag-config \
+    --from-literal=ADMIN_USERS="$ADMIN_USERS" \
+    --from-literal=SUPERADMIN_USERS="$SUPERADMIN_USERS" \
+    --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NAMESPACE" create secret generic pricetag-session \
+    --from-literal=SESSION_SECRET="$SESSION_SECRET" \
     --dry-run=client -o yaml | oc apply -f -
 
 # ── Deploy CNPG and the application profile ───────────────────
@@ -111,12 +125,15 @@ oc apply -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
 oc -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
 
 export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT
-envsubst < "$SCRIPT_DIR/database/cnpg/10-cluster.yaml" | oc apply -f -
-envsubst < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
+envsubst '${NAMESPACE} ${STORAGE_CLASS} ${COS_BUCKET} ${COS_ENDPOINT}' \
+    < "$SCRIPT_DIR/database/cnpg/10-cluster.yaml" | oc apply -f -
+envsubst '${NAMESPACE}' \
+    < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
 oc -n "$NAMESPACE" wait cluster/aigateway-pg --for=condition=Ready --timeout=10m
 
 echo "Deploying PriceTag profile: $PROFILE"
-oc apply -k "$PROFILE_DIR"
+oc kustomize "$PROFILE_DIR" | \
+    envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT}' | oc apply -f -
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s

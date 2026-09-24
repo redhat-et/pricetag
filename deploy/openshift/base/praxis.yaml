@@ -361,7 +361,7 @@ data:
           - filter: headers
             request_set:
               - name: "Host"
-                value: "qwen38-flash-next-d57178e0-2037-479e-9a33-217f81dd6f5e.apps.emerg.pcbk.p1.openshiftapps.com"
+                value: "${QWEN_ENDPOINT}"
               - name: "anthropic-version"
                 value: "2023-06-01"
 
@@ -376,7 +376,7 @@ data:
                 value: "api.anthropic.com"
               - name: cb-glm
                 header: Host
-                value: "litellm.cb.ete.res.ibm.com"
+                value: "${CB_GLM_ENDPOINT}"
 
           - filter: load_balancer
             clusters:
@@ -388,17 +388,17 @@ data:
                   - "api.anthropic.com:443"
               - name: qwen-flash
                 tls:
-                  sni: "qwen38-flash-next-d57178e0-2037-479e-9a33-217f81dd6f5e.apps.emerg.pcbk.p1.openshiftapps.com"
+                  sni: "${QWEN_ENDPOINT}"
                 idle_timeout_ms: 45000
                 endpoints:
-                  - "qwen38-flash-next-d57178e0-2037-479e-9a33-217f81dd6f5e.apps.emerg.pcbk.p1.openshiftapps.com:443"
+                  - "${QWEN_ENDPOINT}:443"
               - name: cb-glm
                 tls:
-                  sni: "litellm.cb.ete.res.ibm.com"
+                  sni: "${CB_GLM_ENDPOINT}"
                 # Same stale-conn guard as the other upstreams.
                 idle_timeout_ms: 45000
                 endpoints:
-                  - "litellm.cb.ete.res.ibm.com:443"
+                  - "${CB_GLM_ENDPOINT}:443"
 ---
 # NOTE: provider-credentials Secret is created by deploy.sh from
 # env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY). Do NOT include it
@@ -445,6 +445,11 @@ spec:
                 secretKeyRef:
                   name: provider-credentials
                   key: OPENAI_API_KEY
+            - name: CB_LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: provider-credentials
+                  key: CB_LITELLM_API_KEY
           volumeMounts:
             - name: config
               mountPath: /etc/praxis

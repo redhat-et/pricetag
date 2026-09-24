@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - llm-katan.yaml
   - maas-api.yaml
+  - maas-api-rbac.yaml
   - metering-rbac.yaml
   - metering-service.yaml
   - praxis.yaml
