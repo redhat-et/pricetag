@@ -7,8 +7,7 @@ scale, or patch the team deployment while diagnosing it.
 
 Check the listener dialect and header:
 
-- Anthropic and unified routes use `x-api-key`.
-- OpenAI routes use `Authorization: Bearer ...`.
+- The single `ai-gateway` hostname dispatches `/v1/messages` to the Anthropic pipeline (`x-api-key`) and `/v1/chat/completions` plus `/v1/responses` to the OpenAI-compatible pipeline (`Authorization: Bearer ...`).
 - Confirm the key exists and is active in MaaS.
 - Check `maas-api` logs and the gateway logs for validation failures.
 

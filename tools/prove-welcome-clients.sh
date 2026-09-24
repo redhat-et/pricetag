@@ -5,8 +5,8 @@
 # PriceTag welcome page (Claude Code, Codex pricetag+qwen, OpenCode) against
 # a gateway, headless, and prove each one produced a metering row.
 #
-# Snippets are the welcome page's own text with {{UNIFIED_URL}} /
-# {{OPENAI_URL}} substituted — if the page and the gateway disagree, this
+# Snippets are the welcome page's own client configurations pointed at one
+# canonical gateway host — if the page and gateway disagree, this
 # script finds it, which is exactly what curl-only smoke tests miss.
 #
 # Usage:
@@ -27,7 +27,7 @@ PROMPT="Reply with exactly one word: onboarded"
 OUT="${CLAUDE_JOB_DIR:-/tmp}/tmp/welcome-prove"
 rm -rf "$OUT"; mkdir -p "$OUT"; chmod 700 "$OUT"
 
-CLIENTS="${CLIENTS:-claude codex opencode hermes}"   # subset filter for reruns
+CLIENTS="${CLIENTS:-chat claude codex opencode hermes}"   # subset filter for reruns
 want() { [[ " $CLIENTS " == *" $1 "* ]]; }
 
 log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
@@ -39,11 +39,12 @@ skip() { printf '  SKIP %s\n' "$*"; RESULTS+="SKIP|$1"$'\n'; }
 
 # ── endpoints ──────────────────────────────────────────────────
 host() { oc -n "$NAMESPACE" get "route/$1" -o jsonpath='{.spec.host}' | sed 's|^|https://|'; }
-UNIFIED="$(host "ai-gateway-unified$SUFFIX")"
-OPENAI="$(host "ai-gateway-openai$SUFFIX")/v1"
+GATEWAY="$(host "ai-gateway$SUFFIX")"
+UNIFIED="$GATEWAY"
+OPENAI="$GATEWAY/v1"
 KEY="${PRICETAG_KEY:-$(tr -d '[:space:]' < "$KEY_FILE")}"
 [[ ${#KEY} -gt 10 ]] || { echo "no key (set PRICETAG_KEY or KEY_FILE)"; exit 1; }
-echo "target=$TARGET unified=$UNIFIED openai=$OPENAI (key held in env, ${#KEY} chars)"
+echo "target=$TARGET gateway=$GATEWAY (key held in env, ${#KEY} chars)"
 
 db_rows() {   # count + token sums from the (shadow) metering db; prod db probe is manual
     [[ "$TARGET" == shadow ]] || { echo "n/a"; return; }
@@ -53,6 +54,33 @@ db_rows() {   # count + token sums from the (shadow) metering db; prod db probe 
         --overrides="{\"spec\":{\"containers\":[{\"name\":\"welcome-probe\",\"image\":\"postgres:16-alpine\",\"stdin\":true,\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"envFrom\":[{\"secretRef\":{\"name\":\"metering-shadow-db-url\"}}],\"command\":[\"sh\",\"-c\",\"psql \\\"\$DATABASE_URL\\\" -tAc \\\"select count(*) from usage_events\\\"\"]}]}}" 2>/dev/null \
         | grep -E '^[[:space:]]*[0-9]+$' | tr -d '[:space:]' || true
 }
+
+# ── 0. OpenAI Chat Completions (welcome: curl quickstart) ───────
+log "OpenAI Chat Completions (single gateway host)"
+if want chat && command -v curl >/dev/null; then
+    before="$(db_rows)"
+    cat > "$OUT/chat.curl" <<EOF
+url = "$OPENAI/chat/completions"
+header = "Authorization: Bearer $KEY"
+header = "content-type: application/json"
+data = '{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Reply with exactly one word: onboarded"}]}'
+EOF
+    chmod 600 "$OUT/chat.curl"
+    curl --config "$OUT/chat.curl" --fail --silent --show-error \
+      --output "$OUT/chat.json" || true
+    rm -f "$OUT/chat.curl"
+    python3 - "$OUT/chat.json" <<'PY' && pass "openai-chat-completions" || fail "openai-chat-completions"
+import json, sys
+try:
+    body = json.load(open(sys.argv[1]))
+    assert body["choices"][0]["message"]["content"]
+except Exception:
+    raise SystemExit(1)
+PY
+    after="$(db_rows)"; echo "  usage_events rows: $before -> $after"
+else
+    skip "chat completions (excluded via CLIENTS or curl not installed)"
+fi
 
 # ── 1. Claude Code (welcome: env block + modelPicker/modelSettings) ──
 log "Claude Code (gateway discovery + hosted Qwen)"
@@ -83,25 +111,19 @@ fi
 # ── 2. Codex (welcome: pricetag profile + qwen profile) ────────
 if want codex && command -v codex >/dev/null; then
     export CODEX_HOME="$OUT/codex"; mkdir -p "$CODEX_HOME"
-    # WELCOME-PAGE FINDING: codex >=0.15x rejects the welcome page's legacy
-    # [profiles.x] table when --profile is used ("move those settings into
-    # <profile>.config.toml"). Providers stay in config.toml; each profile
-    # becomes its own file. The welcome page snippet is stale for these
-    # versions — flagged to Yos/Noy rather than papered over.
+    # Providers stay in config.toml; Codex profiles are separate
+    # <profile>.config.toml files.
     cat > "$CODEX_HOME/config.toml" <<EOF
 [model_providers.pricetag]
 name     = "PriceTag"
 base_url = "$OPENAI/"
 env_key  = "PRICETAG_KEY"
 wire_api = "responses"
-# /v1 added vs the welcome page (welcome.html line ~422): codex sends
-# <base_url>/responses, and the gateway serves /v1/responses — the page's
-# snippet 404s as written. Flagged to Yos/Noy as a page fix.
 [model_providers.qwen]
 name         = "PriceTag hosted"
-base_url     = "$UNIFIED/v1"
+base_url     = "$OPENAI"
+env_key       = "PRICETAG_KEY"
 wire_api     = "responses"
-http_headers = { "x-api-key" = "$KEY" }
 EOF
     cat > "$CODEX_HOME/pricetag.config.toml" <<EOF
 model          = "gpt-5.3-codex"
@@ -111,8 +133,12 @@ EOF
 model          = "Inferact/Qwen3.8-Flash-Next-NVFP4"
 model_provider = "qwen"
 EOF
+    cat > "$CODEX_HOME/glm.config.toml" <<EOF
+model          = "rits/zai-org/glm-5-3"
+model_provider = "qwen"
+EOF
     chmod 600 "$CODEX_HOME"/*.config.toml "$CODEX_HOME/config.toml"
-    for prof in qwen pricetag; do
+    for prof in pricetag qwen glm; do
         log "Codex --profile $prof"
         before="$(db_rows)"
         PRICETAG_KEY="$KEY" timeout 180 codex --profile "$prof" exec \

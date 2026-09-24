@@ -397,8 +397,8 @@ def main():
                     help="effort-level probe: comma list of default, off, "
                          "or a thinking budget in tokens — e.g. "
                          "default,off,1024,4096. Adds a variant per entry.")
-    ap.add_argument("-b", "--base", default=os.environ.get("UNIFIED_URL", DEFAULT_BASE),
-                    metavar="URL", help="unified route base URL")
+    ap.add_argument("-b", "--base", default=os.environ.get("GATEWAY_URL", DEFAULT_BASE),
+                    metavar="URL", help="single PriceTag gateway base URL")
     ap.add_argument("--timeout", type=float, default=300,
                     help="per-request timeout in seconds — a full 8192-token "
                          "turn at ~100 tok/s needs ~90s (default 300)")
