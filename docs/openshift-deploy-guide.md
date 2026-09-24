@@ -168,6 +168,12 @@ noncurrent objects after the configured retention period. Set retention accordin
 to the recovery requirement; `30` days is the EnMaaS practice default. Do not put
 AWS access keys in a Kubernetes Secret for EnMaaS.
 
+This is an automatic S3 lifecycle policy, not a credential or subscription
+renewal. It does not stop the database or future backups. It removes old base
+backup/WAL objects and therefore limits how far back a restore can go. Increase
+`S3_RETENTION_DAYS` to `90` or `180` for an environment that needs a longer
+historical recovery window.
+
 Create a dedicated IAM role for the CNPG instance ServiceAccount. Its trust policy
 must restrict both the cluster OIDC provider and this subject:
 

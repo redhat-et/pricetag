@@ -50,7 +50,7 @@ in Kubernetes.
 | Layer | EnMaaS configuration |
 |---|---|
 | Object store | Private, versioned, SSE-encrypted S3 bucket in `us-west-2` |
-| Retention | 30 days by default via `S3_RETENTION_DAYS`; choose a longer period for real recovery requirements |
+| Retention | 30 days by default via `S3_RETENTION_DAYS`; choose 90/180 days for a longer recovery window |
 | Authentication | IAM role `pricetag-enmaas-cnpg-backup` via OpenShift OIDC workload identity |
 | ServiceAccount | `enmaas/aigateway-pg` |
 | CNPG credentials | `s3Credentials.inheritFromIAMRole: true`; no AWS key Secret |
@@ -88,7 +88,9 @@ oc -n enmaas get cluster aigateway-pg \
 
 The backup must reach `completed` and continuous archiving must report
 `ContinuousArchivingSuccess`. Do not use the IBM COS Secret or the production
-cutover steps below for EnMaaS.
+cutover steps below for EnMaaS. Lifecycle expiration is automatic object
+retention, not a renewal requirement; it does not stop new backups or the
+database, but it does remove restore points older than the configured window.
 
 ## Cutover runbook (old postgresql-0 → aigateway-pg)
 
