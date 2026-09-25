@@ -50,6 +50,8 @@ spec:
               value: "praxis-config"
             - name: PIPELINE_CONFIGMAP_KEY
               value: "praxis.yaml"
+            - name: WELCOME_GATEWAY_URL
+              value: "${GATEWAY_URL}"
           resources:
             requests:
               cpu: 50m

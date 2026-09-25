@@ -166,20 +166,20 @@ primary does NOT shrink automatically — set both sides explicitly.
 Yos's plan: straight 50/50 (all four routes), Yos + Noy testing live.
 
 ```bash
-# GO (all four routes, one command each):
-for r in ai-gateway-unified ai-gateway-anthropic ai-gateway-openai ai-gateway-benchmark; do
+# GO (the five paths on the canonical inference hostname):
+for r in ai-gateway ai-gateway-chat-completions ai-gateway-responses ai-gateway-conversations ai-gateway-models; do
   oc -n ai-gateway-dogfood set route-backends $r praxis=50 praxis-shadow=50
 done
 
 # verify spec (route-backends is NOT a gettable resource — jsonpath):
-oc -n ai-gateway-dogfood get route ai-gateway-unified \
+oc -n ai-gateway-dogfood get route ai-gateway \
   -o jsonpath='{.spec.to.name}={.spec.to.weight} ALT={.spec.alternateBackends}{"\n"}'
 
 # verify empirically — MUST be a FULL-CHAIN request (tiny chat completion);
 # /v1/models short-circuits in model_catalog BEFORE the marker filter and
 # 401s short-circuit in auth — both show "old" even from the new build:
-curl -sD - -o /dev/null https://<prod-unified-host>/v1/chat/completions \
-  -H "x-api-key: $KEY" -H content-type:application/json \
+curl -sD - -o /dev/null https://<prod-gateway-host>/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H content-type:application/json \
   -d '{"model":"Inferact/Qwen3.8-Flash-Next-NVFP4","messages":[{"role":"user","content":"hi"}],"max_tokens":4}' \
   | grep -i x-gateway-build     # present => this response came from the new build
 
@@ -187,7 +187,7 @@ curl -sD - -o /dev/null https://<prod-unified-host>/v1/chat/completions \
 # servers all state=2 weight=256 means the router IS splitting:
 oc -n openshift-ingress exec deploy/router-default -- sh -c \
   "echo 'show servers state' | socat /var/lib/haproxy/run/haproxy.sock -" \
-  | grep 'ai-gateway-unified '
+  | grep 'ai-gateway '
 ```
 
 **FLIPPED 2026-09-17 03:5x** — all four routes `praxis=50 praxis-shadow=50`
@@ -220,7 +220,7 @@ unchanged URLs and attribute per request.
 **Rollback (any time, seconds, no pod churn), per route:**
 
 ```bash
-for r in ai-gateway-unified ai-gateway-anthropic ai-gateway-openai ai-gateway-benchmark; do
+for r in ai-gateway ai-gateway-chat-completions ai-gateway-responses ai-gateway-conversations ai-gateway-models; do
   oc -n ai-gateway-dogfood set route-backends $r praxis=100 praxis-shadow=0
 done
 # clean removal afterwards: patch alternateBackends: []

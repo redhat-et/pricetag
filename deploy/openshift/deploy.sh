@@ -44,6 +44,12 @@ esac
 [[ "$NAMESPACE" == "$expected_namespace" ]] || \
   die "PROFILE=$PROFILE requires NAMESPACE=$expected_namespace"
 
+ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
+[[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
+GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
+GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
+export GATEWAY_HOST GATEWAY_URL
+
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
 fi
@@ -167,11 +173,24 @@ if [[ -n "$binding_name" ]] && \
 fi
 
 oc kustomize "$PROFILE_DIR" |
-  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT}" | oc apply -f -
+  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL}" | oc apply -f -
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 
+# Wait for every path route to be admitted before retiring old gateway hosts.
+for route in ai-gateway ai-gateway-chat-completions ai-gateway-responses \
+  ai-gateway-conversations ai-gateway-models; do
+  oc -n "$NAMESPACE" wait --for=condition=Admitted "route/$route" --timeout=120s
+done
+
+# Remove the former public gateway hostnames after the canonical path-routed
+# host and workloads are ready. The path routes above preserve each API.
+for legacy_route in ai-gateway-anthropic ai-gateway-openai ai-gateway-unified ai-gateway-benchmark; do
+  oc -n "$NAMESPACE" delete route "$legacy_route" --ignore-not-found=true
+done
+
 printf '\nPriceTag deployed to %s (%s)\n' "$NAMESPACE" "$PROFILE"
+printf 'Gateway: %s\n' "$GATEWAY_URL"
 oc -n "$NAMESPACE" get pods

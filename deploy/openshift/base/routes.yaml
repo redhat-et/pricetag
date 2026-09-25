@@ -2,31 +2,35 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: ai-gateway-anthropic
+  name: ai-gateway
   namespace: ai-gateway-dogfood
   labels:
     app: praxis
   annotations:
     haproxy.router.openshift.io/timeout: 300s
 spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/messages
   to:
     kind: Service
     name: praxis
   port:
-    targetPort: anthropic
+    targetPort: unified
   tls:
     termination: edge
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: ai-gateway-openai
+  name: ai-gateway-chat-completions
   namespace: ai-gateway-dogfood
   labels:
     app: praxis
   annotations:
     haproxy.router.openshift.io/timeout: 300s
 spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/chat/completions
   to:
     kind: Service
     name: praxis
@@ -38,31 +42,55 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: ai-gateway-benchmark
+  name: ai-gateway-responses
   namespace: ai-gateway-dogfood
   labels:
     app: praxis
   annotations:
     haproxy.router.openshift.io/timeout: 300s
 spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/responses
   to:
     kind: Service
     name: praxis
   port:
-    targetPort: benchmark
+    targetPort: openai
   tls:
     termination: edge
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: ai-gateway-unified
+  name: ai-gateway-conversations
   namespace: ai-gateway-dogfood
   labels:
     app: praxis
   annotations:
     haproxy.router.openshift.io/timeout: 300s
 spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/conversations
+  to:
+    kind: Service
+    name: praxis
+  port:
+    targetPort: openai
+  tls:
+    termination: edge
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ai-gateway-models
+  namespace: ai-gateway-dogfood
+  labels:
+    app: praxis
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/models
   to:
     kind: Service
     name: praxis
