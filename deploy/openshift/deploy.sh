@@ -180,9 +180,20 @@ oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 
 # Wait for every path route to be admitted before retiring old gateway hosts.
+# Route status keeps conditions under status.ingress, so oc wait's generic
+# condition handler is not reliable here.
 for route in ai-gateway ai-gateway-chat-completions ai-gateway-responses \
   ai-gateway-conversations ai-gateway-models; do
-  oc -n "$NAMESPACE" wait --for=condition=Admitted "route/$route" --timeout=120s
+  admitted=false
+  for _ in {1..120}; do
+    if [[ "$(oc -n "$NAMESPACE" get route "$route" \
+      -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}')" == True ]]; then
+      admitted=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$admitted" == true ]] || die "route was not admitted: $route"
 done
 
 # Remove the former public gateway hostnames after the canonical path-routed
