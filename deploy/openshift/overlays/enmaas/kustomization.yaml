@@ -14,7 +14,7 @@ images:
     newTag: standalone-1238aafa
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
-    newTag: rollups-b04182d
+    newTag: single-gateway-a1fd21c
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
     newTag: practice-9be8880c
