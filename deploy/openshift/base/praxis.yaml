@@ -13,11 +13,6 @@ data:
       allow_public_admin: true
 
     listeners:
-      - name: anthropic
-        address: "0.0.0.0:8080"
-        filter_chains:
-          - anthropic
-
       - name: openai
         address: "0.0.0.0:8081"
         filter_chains:
@@ -28,86 +23,15 @@ data:
         filter_chains:
           - benchmark
 
-      # Unified Anthropic-dialect route: ONE URL for Claude Code, model-based
-      # routing to multiple backends. Claude Code always speaks /v1/messages,
-      # and Anthropic + Qwen (vLLM) both serve it natively, so /model can switch
-      # between them with no translation. model_to_header promotes the body's
-      # model; the router sends Qwen3.8-27B-FP8 to the vllm cluster and every
-      # other (claude-*) model to the anthropic cluster (the default).
+      # The public ai-gateway hostname path-routes Anthropic Messages to this
+      # listener and OpenAI Chat/Responses/Conversations to the openai listener.
+      # Keep protocol-specific pipelines separate behind one public host.
       - name: unified
         address: "0.0.0.0:8084"
         filter_chains:
           - unified
 
     filter_chains:
-      - name: anthropic
-        filters:
-          - filter: api_key_auth
-            validate_url: "http://maas-api:8080/internal/v1/api-keys/validate"
-            token_header: "x-api-key"
-            cache_ttl_seconds: 300
-            timeout_seconds: 5
-
-          - filter: model_access
-            mode: denylist
-            models:
-            overrides:
-              - groups: ["octo-eng"]
-                mode: allowlist
-                models: ["*"]
-            group_metadata_key: "x-tenant-group"
-            max_body_bytes: 33554432
-
-          - filter: identity_header_guard
-            prefix: "x-tenant-"
-
-          - filter: router
-            routes:
-              - path_prefix: "/"
-                cluster: anthropic
-
-          - filter: external_metering
-            metering_url: "http://metering-service:8080"
-            # core 0.5.5 blocks filter sub-requests to private IPs by default (SSRF guard)
-            allow_private_endpoint: true
-            timeout_seconds: 5
-            feature_key: "inference-tokens"
-            source: "praxis-ai"
-            fail_open: true
-            identity_header_prefix: "x-tenant-"
-            default_model: "unknown"
-
-          - filter: token_count
-            provider: anthropic
-
-          - filter: token_usage_headers
-
-          - filter: credential_injection
-            clusters:
-              - name: anthropic
-                header: x-api-key
-                env_var: ANTHROPIC_API_KEY
-                strip_client_credential: true
-
-          - filter: headers
-            request_set:
-              - name: "Host"
-                value: "api.anthropic.com"
-              - name: "anthropic-version"
-                value: "2023-06-01"
-
-          - filter: load_balancer
-            clusters:
-              - name: anthropic
-                tls:
-                  sni: "api.anthropic.com"
-                # Evict pooled upstream connections before the provider's
-                # ~60s keepalive kill — stale conns hang requests until the
-                # route timeout (see docs/dogfood-tracker.md, Ops Findings).
-                idle_timeout_ms: 45000
-                endpoints:
-                  - "api.anthropic.com:443"
-
       - name: openai
         filters:
           - filter: api_key_auth
@@ -136,8 +60,19 @@ data:
           - filter: identity_header_guard
             prefix: "x-tenant-"
 
+          - filter: model_to_header
+            header: X-Model
+
           - filter: router
             routes:
+              - path_prefix: "/"
+                headers:
+                  x-model: "Inferact/Qwen3.8-Flash-Next-NVFP4"
+                cluster: qwen-flash
+              - path_prefix: "/"
+                headers:
+                  x-model: "rits/zai-org/glm-5-3"
+                cluster: cb-glm
               - path_prefix: "/"
                 cluster: openai
 
@@ -156,7 +91,8 @@ data:
 
           - filter: token_count
             provider: openai
-            # Codex (gpt-* Responses API) rides THIS listener: response.completed
+            # Codex Responses and OpenAI-compatible hosted models ride this
+            # listener: response.completed
             # embeds the full response object and routinely exceeds the 64 KiB
             # default, so the scanner dropped the usage-carrying event and the
             # prod ledger booked Codex spend as 0 (canary incident 2026-09-17).
@@ -172,11 +108,25 @@ data:
                 env_var: OPENAI_API_KEY
                 header_prefix: "Bearer "
                 strip_client_credential: true
+              - name: cb-glm
+                header: Authorization
+                env_var: CB_LITELLM_API_KEY
+                header_prefix: "Bearer "
+                strip_client_credential: true
 
           - filter: headers
             request_set:
               - name: "Host"
                 value: "api.openai.com"
+
+          - filter: credential_injection
+            clusters:
+              - name: qwen-flash
+                header: Host
+                value: "${QWEN_ENDPOINT}"
+              - name: cb-glm
+                header: Host
+                value: "${CB_GLM_ENDPOINT}"
 
           - filter: load_balancer
             clusters:
@@ -187,6 +137,18 @@ data:
                 idle_timeout_ms: 45000
                 endpoints:
                   - "api.openai.com:443"
+              - name: qwen-flash
+                tls:
+                  sni: "${QWEN_ENDPOINT}"
+                idle_timeout_ms: 45000
+                endpoints:
+                  - "${QWEN_ENDPOINT}:443"
+              - name: cb-glm
+                tls:
+                  sni: "${CB_GLM_ENDPOINT}"
+                idle_timeout_ms: 45000
+                endpoints:
+                  - "${CB_GLM_ENDPOINT}:443"
 
       - name: benchmark
         filters:
@@ -232,10 +194,9 @@ data:
                 endpoints:
                   - "llm-katan:8000"
 
-      # Unified Anthropic-dialect chain: one route, many models. Same building
-      # blocks as the single-provider chains, but with model_to_header + a
-      # multi-rule router so the client can /model between Claude and Qwen on a
-      # single base URL.
+      # Anthropic Messages pipeline for the public gateway host. This chain
+      # routes Claude/Qwen/GLM models while the path-specific OpenAI listener
+      # handles Chat Completions and Responses.
       - name: unified
         filters:
           - filter: api_key_auth
@@ -243,15 +204,33 @@ data:
             token_header: "x-api-key"
             cache_ttl_seconds: 300
             timeout_seconds: 5
+            conditions:
+              - when:
+                  headers:
+                    anthropic-version: "2023-06-01"
 
-          # Answer GET /v1/models from static config so the client model picker
-          # sees the local Qwen + the Claude models (a real Anthropic /v1/models
-          # wouldn't list the self-hosted Qwen). Discovery only — access is still
-          # enforced by model_access below. Anthropic format: this is the
-          # Anthropic-dialect route. Other requests pass through untouched.
+          # OpenAI-compatible clients use Bearer auth, including GET /v1/models.
+          # The Anthropic version header selects the Messages auth/catalog dialect.
+          - filter: api_key_auth
+            validate_url: "http://maas-api:8080/internal/v1/api-keys/validate"
+            token_header: "authorization"
+            cache_ttl_seconds: 300
+            timeout_seconds: 5
+            conditions:
+              - unless:
+                  headers:
+                    anthropic-version: "2023-06-01"
+
+          # Both clients share GET /v1/models. Select the envelope from the
+          # protocol marker sent by Anthropic SDKs; OpenAI clients use the
+          # standard OpenAI list envelope.
           - filter: model_catalog
             format: anthropic
             path: /v1/models
+            conditions:
+              - when:
+                  headers:
+                    anthropic-version: "2023-06-01"
             models:
               - id: Inferact/Qwen3.8-Flash-Next-NVFP4
                 display_name: "Qwen 3.8 Flash Next (hosted, $0.15/$0.47 per MTok)"
@@ -268,6 +247,25 @@ data:
                 display_name: "GLM 5.3 (hosted via curvebender)"
               # EnMaaS adds its Vertex model catalog entry at this marker.
               # ENMAAS_VERTEX_MODEL_CATALOG
+
+          - filter: model_catalog
+            format: openai
+            path: /v1/models
+            conditions:
+              - unless:
+                  headers:
+                    anthropic-version: "2023-06-01"
+            models:
+              - id: gpt-5.3-codex
+                owned_by: openai
+              - id: gpt-5.4
+                owned_by: openai
+              - id: gpt-5.6-luna
+                owned_by: openai
+              - id: Inferact/Qwen3.8-Flash-Next-NVFP4
+                owned_by: vllm
+              - id: rits/zai-org/glm-5-3
+                owned_by: curvebender
 
           - filter: model_access
             mode: denylist
@@ -436,8 +434,6 @@ spec:
           image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai:latest
           args: ["-c", "/etc/praxis/praxis.yaml"]
           ports:
-            - containerPort: 8080
-              name: anthropic
             - containerPort: 8081
               name: openai
             - containerPort: 8082
@@ -493,9 +489,6 @@ spec:
   selector:
     app: praxis
   ports:
-    - name: anthropic
-      port: 8080
-      targetPort: 8080
     - name: openai
       port: 8081
       targetPort: 8081

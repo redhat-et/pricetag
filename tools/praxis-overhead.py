@@ -52,9 +52,7 @@ import urllib.parse
 
 DIRECT_DEFAULT = ("https://qwen38-flash-next-d57178e0-2037-479e-9a33-"
                   "217f81dd6f5e.apps.emerg.pcbk.p1.openshiftapps.com")
-PRAXIS_DEFAULT = ("https://ai-gateway-unified-ai-gateway-dogfood.dogfood-"
-                  "us-south-1-bxf-4x-f196230f74f7ff44a5b4eeb1003c5bd5-0000"
-                  ".us-south.containers.appdomain.cloud")
+PRAXIS_DEFAULT = os.environ.get("GATEWAY_URL", "https://gateway.example.com")
 MODEL_DEFAULT = "Inferact/Qwen3.8-Flash-Next-NVFP4"
 PROMPT = "Reply with exactly: overhead-probe-ok"
 

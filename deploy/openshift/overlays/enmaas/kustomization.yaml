@@ -11,7 +11,7 @@ resources:
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/maas-api
-    newTag: practice-f6359f85
+    newTag: standalone-1238aafa
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
     newTag: practice-05e9d104
@@ -48,17 +48,6 @@ patches:
       metadata:
         name: llm-katan
   - target:
-      group: route.openshift.io
-      version: v1
-      kind: Route
-      name: ai-gateway-benchmark
-    patch: |-
-      $patch: delete
-      apiVersion: route.openshift.io/v1
-      kind: Route
-      metadata:
-        name: ai-gateway-benchmark
-  - target:
       group: apps
       version: v1
       kind: Deployment
@@ -89,3 +78,19 @@ patches:
         ports:
           - port: 8082
             $patch: delete
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: maas-api
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MAAS_SUBSCRIPTION_MODE
+          value: standalone
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: METRICS_SECURE
+          value: "false"

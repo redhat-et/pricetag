@@ -20,8 +20,7 @@
 
 ```
                         ┌────────────────────────── Routes (edge TLS) ──────────────────────────┐
- Claude Code ──────────►│ ai-gateway-unified-<ns>.<appsDomain>   (single URL, /model switching)  │
- Codex / SDKs ─────────►│ ai-gateway-anthropic-… / ai-gateway-openai-…                    │
+ All AI clients ───────►│ ai-gateway-<ns>.<appsDomain> (one host; path selects API dialect) │
  Browser  ─────────────►│ dashboard-… (PriceTag)                 status-… (static status page)   │
                         └───────┬────────────────────────────────────────────┬───────────────────┘
                                 ▼                                            ▼
@@ -52,13 +51,13 @@
 | **llm-katan** | Optional benchmark backend in the dogfood/test profiles; omitted from EnMaaS | llm-katan | Python |
 | **qwen-flash-proxy** | Optional: nginx TLS-terminating hop to an external vLLM route | `nginx:1-alpine` | — |
 
-### Request flow (the unified route, main user entrypoint)
+### Request flow (one public host, protocol paths)
 
-1. Client POSTs Anthropic `/v1/messages` with `x-api-key: sk-…` to the `unified` route.
-2. praxis `api_key_auth` filter validates the key against `maas-api` (`POST /internal/v1/api-keys/validate`, 300 s cache) → gets `username` + `groups` → sets `x-tenant-*` identity headers (`identity_header_guard` strips client-supplied ones first).
-3. `model_catalog` answers `GET /v1/models` from static config (so `/model` pickers list Claude + self-hosted).
+1. The shared host path-routes Anthropic `/v1/messages` to the Messages pipeline and OpenAI `/v1/chat/completions`, `/v1/responses`, and `/v1/conversations` to the OpenAI-compatible pipeline.
+2. Each pipeline validates its native client credential (`x-api-key` for Anthropic, `Authorization: Bearer` for OpenAI) against `maas-api` (`POST /internal/v1/api-keys/validate`, 300 s cache), then sets `x-tenant-*` identity headers (`identity_header_guard` strips client-supplied ones first). Anthropic SDK requests carry `anthropic-version: 2023-06-01`.
+3. Both client families use `GET /v1/models`; the `anthropic-version` header selects the Anthropic envelope, while requests without it receive the OpenAI list envelope.
 4. `model_access` enforces per-group allow/deny lists (groups come from the key's `X-MaaS-Group` at creation).
-5. `model_to_header` promotes the body's `"model"` field to `X-Model`; `router` branches: self-hosted model names → vLLM clusters, everything else → Anthropic.
+5. `model_to_header` promotes the body's `"model"` field to `X-Model`; protocol-specific routers select OpenAI, Qwen, GLM, or Anthropic backends.
 6. `external_metering` records the request + streamed response usage to metering-service (`fail_open: true` — metering never blocks traffic).
 7. `credential_injection` swaps in the real provider key (client credential stripped); `load_balancer` sends it upstream with correct `Host`/SNI.
 
@@ -96,6 +95,9 @@ default — choose per environment.
 ```bash
 NS=ai-gateway-dogfood                  # namespace ⟨pick⟩ — keep it short, it embeds in route hosts
 APPS_DOMAIN=$(oc get dns cluster -o jsonpath='{.spec.baseDomain}')   # e.g. apps.ocp.example.com
+ROUTE_DOMAIN=$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+GATEWAY_HOST="ai-gateway-${NS}.${ROUTE_DOMAIN}"
+GATEWAY_URL="https://${GATEWAY_HOST}"
 ADMIN_USERS="alice@redhat.com,bob@redhat.com"                        # PriceTag dashboard admins ⟨pick⟩
 SUPERADMIN_USERS="alice@redhat.com"                                  # platform operators ⟨pick⟩
 STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[0].metadata.name}')   # any RWO-capable class
@@ -234,7 +236,10 @@ export CONFIRM_DEPLOYMENT=true
 Run this from the repository containing the mirrored EnMaaS image tags. The script
 creates the namespace, CRDs, CNPG operator, database, applications, and Routes in that
 target only. It does not build images, create the AWS bucket, create the IAM role, copy
-production data, or migrate production secrets automatically.
+production data, or migrate production secrets automatically. MaaS governance CRs are
+intentionally not applied because this profile does not deploy the MaaS controller.
+The EnMaaS overlay uses the fork-built MaaS API image with
+`MAAS_SUBSCRIPTION_MODE=standalone`; dogfood and test retain enforced subscription mode.
 
 ### 3.3 EnMaaS Vertex routing
 
@@ -751,25 +756,57 @@ oauth-proxy container. `ADMIN_USERS` members additionally get the admin view.
 ### 4.9 Routes
 
 ```yaml
-# One route per listener + dashboard. host = <name>-<ns>.<APPS_DOMAIN> (default
-# subdomain is fine — omit `host` entirely and let the router assign).
+# One public inference hostname. OpenShift path routes dispatch each API path
+# to its protocol-specific Praxis listener; clients see one base URL.
 apiVersion: route.openshift.io/v1
 kind: Route
-metadata: { name: ai-gateway-unified }
+metadata: { name: ai-gateway }
 spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/messages
   to: { kind: Service, name: praxis }
   port: { targetPort: unified }
   tls: { termination: edge }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
-metadata: { name: ai-gateway-anthropic }
-spec: { to: { kind: Service, name: praxis }, port: { targetPort: anthropic }, tls: { termination: edge } }
+metadata: { name: ai-gateway-chat-completions }
+spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/chat/completions
+  to: { kind: Service, name: praxis }
+  port: { targetPort: openai }
+  tls: { termination: edge }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
-metadata: { name: ai-gateway-openai }
-spec: { to: { kind: Service, name: praxis }, port: { targetPort: openai }, tls: { termination: edge } }
+metadata: { name: ai-gateway-models }
+spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/models
+  to: { kind: Service, name: praxis }
+  port: { targetPort: unified }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata: { name: ai-gateway-responses }
+spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/responses
+  to: { kind: Service, name: praxis }
+  port: { targetPort: openai }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata: { name: ai-gateway-conversations }
+spec:
+  host: ${GATEWAY_HOST}
+  path: /v1/conversations
+  to: { kind: Service, name: praxis }
+  port: { targetPort: openai }
+  tls: { termination: edge }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -827,16 +864,16 @@ oc exec -n "$NS" deploy/maas-api -- wget -qO- --header="Content-Type: applicatio
 # 3. Gateway auth rejects garbage key
 KEY=sk-<from-4.11>
 curl -sk -o /dev/null -w '%{http_code}\n' \
-  https://ai-gateway-unified-${NS}.${APPS_DOMAIN}/v1/messages \
+  "$GATEWAY_URL/v1/messages" \
   -H "x-api-key: sk-bogus" -H 'content-type: application/json' \
   -d '{"model":"claude-haiku-4-5-20251001","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}'
 # expect: 401
 
 # 4. Model catalog served (proves praxis config loaded)
-curl -sk https://ai-gateway-unified-${NS}.${APPS_DOMAIN}/v1/models -H "x-api-key: $KEY" | head -c 300
+curl -sk "$GATEWAY_URL/v1/models" -H "x-api-key: $KEY" | head -c 300
 
 # 5. Real completion through the gateway → Anthropic
-curl -sk https://ai-gateway-unified-${NS}.${APPS_DOMAIN}/v1/messages \
+curl -sk "$GATEWAY_URL/v1/messages" \
   -H "x-api-key: $KEY" -H 'anthropic-version: 2023-06-01' -H 'content-type: application/json' \
   -d '{"model":"claude-haiku-4-5-20251001","max_tokens":16,"messages":[{"role":"user","content":"say OK"}]}'
 
@@ -852,7 +889,7 @@ open "https://dashboard-${NS}.${APPS_DOMAIN}/dashboard"   # paste the key from s
 Point Claude Code at it:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://ai-gateway-unified-${NS}.${APPS_DOMAIN}"
+export ANTHROPIC_BASE_URL="$GATEWAY_URL"
 export ANTHROPIC_API_KEY="sk-<key>"
 claude
 ```
@@ -881,7 +918,7 @@ claude
 3. **praxis config is start-time only** — CM edits without rollout are silently inert.
 4. **x-api-key vs Authorization**: Anthropic-dialect chains validate `x-api-key`, the
    OpenAI chain `authorization: Bearer`. Clients on the wrong header get 401 even with a
-   valid key. The unified route is Anthropic-dialect (`x-api-key`).
+   valid key. The `/v1/messages` path uses Anthropic auth (`x-api-key`); Chat Completions and Responses use Bearer auth.
 5. **praxis strips inbound `x-tenant-*`** (`identity_header_guard`) — never rely on
    clients setting identity headers.
 6. **Metering is fail-open** — dashboard gaps ≠ outage. Cross-check `external_metering`

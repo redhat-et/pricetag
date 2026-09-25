@@ -44,6 +44,12 @@ esac
 [[ "$NAMESPACE" == "$expected_namespace" ]] || \
   die "PROFILE=$PROFILE requires NAMESPACE=$expected_namespace"
 
+ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
+[[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
+GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
+GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
+export GATEWAY_HOST GATEWAY_URL
+
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
 fi
@@ -200,12 +206,36 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 
+# Wait for every path route to be admitted before retiring old gateway hosts.
+# Route status keeps conditions under status.ingress, so oc wait's generic
+# condition handler is not reliable here.
+for route in ai-gateway ai-gateway-chat-completions ai-gateway-responses \
+  ai-gateway-conversations ai-gateway-models; do
+  admitted=false
+  for _ in {1..120}; do
+    if [[ "$(oc -n "$NAMESPACE" get route "$route" \
+      -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}')" == True ]]; then
+      admitted=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$admitted" == true ]] || die "route was not admitted: $route"
+done
+
+# Remove the former public gateway hostnames after the canonical path-routed
+# host and workloads are ready. The path routes above preserve each API.
+for legacy_route in ai-gateway-anthropic ai-gateway-openai ai-gateway-unified ai-gateway-benchmark; do
+  oc -n "$NAMESPACE" delete route "$legacy_route" --ignore-not-found=true
+done
+
 printf '\nPriceTag deployed to %s (%s)\n' "$NAMESPACE" "$PROFILE"
+printf 'Gateway: %s\n' "$GATEWAY_URL"
 oc -n "$NAMESPACE" get pods
