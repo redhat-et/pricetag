@@ -27,7 +27,7 @@ PROMPT="Reply with exactly one word: onboarded"
 OUT="${CLAUDE_JOB_DIR:-/tmp}/tmp/welcome-prove"
 rm -rf "$OUT"; mkdir -p "$OUT"; chmod 700 "$OUT"
 
-CLIENTS="${CLIENTS:-chat claude codex opencode hermes}"   # subset filter for reruns
+CLIENTS="${CLIENTS:-catalog chat claude codex opencode hermes}"   # subset filter for reruns
 want() { [[ " $CLIENTS " == *" $1 "* ]]; }
 
 log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
@@ -54,6 +54,49 @@ db_rows() {   # count + token sums from the (shadow) metering db; prod db probe 
         --overrides="{\"spec\":{\"containers\":[{\"name\":\"welcome-probe\",\"image\":\"postgres:16-alpine\",\"stdin\":true,\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"envFrom\":[{\"secretRef\":{\"name\":\"metering-shadow-db-url\"}}],\"command\":[\"sh\",\"-c\",\"psql \\\"\$DATABASE_URL\\\" -tAc \\\"select count(*) from usage_events\\\"\"]}]}}" 2>/dev/null \
         | grep -E '^[[:space:]]*[0-9]+$' | tr -d '[:space:]' || true
 }
+
+# ── 0. GET /v1/models returns the caller's protocol envelope ───
+log "Model catalog negotiation (one path, both dialects)"
+if want catalog && command -v curl >/dev/null; then
+    for dialect in anthropic openai; do
+        if [[ "$dialect" == anthropic ]]; then
+            auth_header="x-api-key: $KEY"
+            version_header='anthropic-version: 2023-06-01'
+        else
+            auth_header="Authorization: Bearer $KEY"
+            version_header=""
+        fi
+        cat > "$OUT/models-$dialect.curl" <<EOF
+url = "$GATEWAY/v1/models"
+header = "$auth_header"
+$( [[ -n "$version_header" ]] && printf 'header = "%s"\n' "$version_header" )
+EOF
+        chmod 600 "$OUT/models-$dialect.curl"
+        if curl --config "$OUT/models-$dialect.curl" --fail --silent --show-error \
+          --output "$OUT/models-$dialect.json"; then
+            if python3 - "$dialect" "$OUT/models-$dialect.json" <<'PY'
+import json, sys
+try:
+    dialect, path = sys.argv[1:]
+    body = json.load(open(path))
+    assert body["data"]
+    if dialect == "anthropic":
+        assert body["data"][0]["type"] == "model" and "has_more" in body
+    else:
+        assert body["object"] == "list" and body["data"][0]["object"] == "model"
+except Exception:
+    raise SystemExit(1)
+PY
+            then pass "models/$dialect envelope"
+            else fail "models/$dialect envelope"; fi
+        else
+            fail "models/$dialect request"
+        fi
+        rm -f "$OUT/models-$dialect.curl"
+    done
+else
+    skip "model catalog (excluded via CLIENTS or curl not installed)"
+fi
 
 # ── 0. OpenAI Chat Completions (welcome: curl quickstart) ───────
 log "OpenAI Chat Completions (single gateway host)"

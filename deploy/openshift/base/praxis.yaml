@@ -204,15 +204,33 @@ data:
             token_header: "x-api-key"
             cache_ttl_seconds: 300
             timeout_seconds: 5
+            conditions:
+              - when:
+                  headers:
+                    anthropic-version: "2023-06-01"
 
-          # Answer GET /v1/models from static config so the client model picker
-          # sees the local Qwen + the Claude models (a real Anthropic /v1/models
-          # wouldn't list the self-hosted Qwen). Discovery only — access is still
-          # enforced by model_access below. Anthropic format: this is the
-          # Anthropic-dialect route. Other requests pass through untouched.
+          # OpenAI-compatible clients use Bearer auth, including GET /v1/models.
+          # The Anthropic version header selects the Messages auth/catalog dialect.
+          - filter: api_key_auth
+            validate_url: "http://maas-api:8080/internal/v1/api-keys/validate"
+            token_header: "authorization"
+            cache_ttl_seconds: 300
+            timeout_seconds: 5
+            conditions:
+              - unless:
+                  headers:
+                    anthropic-version: "2023-06-01"
+
+          # Both clients share GET /v1/models. Select the envelope from the
+          # protocol marker sent by Anthropic SDKs; OpenAI clients use the
+          # standard OpenAI list envelope.
           - filter: model_catalog
             format: anthropic
             path: /v1/models
+            conditions:
+              - when:
+                  headers:
+                    anthropic-version: "2023-06-01"
             models:
               - id: Inferact/Qwen3.8-Flash-Next-NVFP4
                 display_name: "Qwen 3.8 Flash Next (hosted, $0.15/$0.47 per MTok)"
@@ -227,6 +245,25 @@ data:
                 display_name: "Claude Fable 5 (octo-eng only)"
               - id: rits/zai-org/glm-5-3
                 display_name: "GLM 5.3 (hosted via curvebender)"
+
+          - filter: model_catalog
+            format: openai
+            path: /v1/models
+            conditions:
+              - unless:
+                  headers:
+                    anthropic-version: "2023-06-01"
+            models:
+              - id: gpt-5.3-codex
+                owned_by: openai
+              - id: gpt-5.4
+                owned_by: openai
+              - id: gpt-5.6-luna
+                owned_by: openai
+              - id: Inferact/Qwen3.8-Flash-Next-NVFP4
+                owned_by: vllm
+              - id: rits/zai-org/glm-5-3
+                owned_by: curvebender
 
           - filter: model_access
             mode: denylist
