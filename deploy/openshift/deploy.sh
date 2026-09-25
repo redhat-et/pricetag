@@ -102,7 +102,7 @@ fi
 if [[ "$PROFILE" == enmaas ]]; then
   [[ -n "${VERTEX_PROJECT:-}" ]] || die "VERTEX_PROJECT is required for PROFILE=enmaas"
   [[ -n "${VERTEX_IMAGE_TAG:-}" ]] || die "VERTEX_IMAGE_TAG is required for PROFILE=enmaas (use the mirrored immutable practice-* tag)"
-  if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true ]]; then
+  if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true || "${ROTATE_VERTEX_SA_KEY:-false}" == true ]]; then
     [[ -n "${VERTEX_SA_KEY_FILE:-}" && -f "$VERTEX_SA_KEY_FILE" ]] || \
       die "VERTEX_SA_KEY_FILE must point to the Vertex service-account JSON file to create/rotate vertex-sa-key"
     oc -n "$NAMESPACE" create secret generic vertex-sa-key \

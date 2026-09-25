@@ -224,6 +224,8 @@ export VERTEX_PROJECT=<gcp-project-id>
 export VERTEX_IMAGE_TAG=practice-<immutable-feature-image-sha>
 # Required only to create vertex-sa-key on first install or rotate it:
 export VERTEX_SA_KEY_FILE=/secure/path/to/service-account.json
+# Set only when rotating the Vertex key; ROTATE_SECRETS=true rotates all managed Secrets.
+export ROTATE_VERTEX_SA_KEY=false
 export CONFIRM_DEPLOYMENT=true
 
 ./deploy/openshift/deploy.sh
@@ -257,8 +259,9 @@ Before deploying EnMaaS Vertex:
 3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
    JSON file. The deploy script creates `vertex-sa-key` from that file and
    mounts it into the existing Praxis pods. The Secret is preserved on later
-   runs. To rotate it, set `ROTATE_SECRETS=true` and provide the replacement
-   file. Key contents are never placed in a manifest.
+   runs. To rotate only this key, set `ROTATE_VERTEX_SA_KEY=true` and provide
+   the replacement file. `ROTATE_SECRETS=true` still intentionally rotates all
+   managed Secrets. Key contents are never placed in a manifest.
 
 This is the initial key-file credential path; GCP Workload Identity Federation
 is not included. Requests use the existing Anthropic Messages endpoint and are
