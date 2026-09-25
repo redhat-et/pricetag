@@ -224,6 +224,7 @@ data:
           # Both clients share GET /v1/models. Select the envelope from the
           # protocol marker sent by Anthropic SDKs; OpenAI clients use the
           # standard OpenAI list envelope.
+          # ENMAAS_VERTEX_ONLY_MODEL_CATALOG
           - filter: model_catalog
             format: anthropic
             path: /v1/models
@@ -276,6 +277,10 @@ data:
                 models: ["*"]
             group_metadata_key: "x-tenant-group"
             max_body_bytes: 33554432
+
+          # EnMaaS may narrow the public inference catalog and access policy to
+          # the Vertex-hosted models without changing the shared base profile.
+          # ENMAAS_VERTEX_ONLY_ACCESS
 
           - filter: identity_header_guard
             prefix: "x-tenant-"

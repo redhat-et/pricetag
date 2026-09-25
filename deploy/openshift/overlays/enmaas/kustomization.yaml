@@ -48,6 +48,39 @@ patches:
       metadata:
         name: llm-katan
   - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-chat-completions
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-chat-completions
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-responses
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-responses
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: ai-gateway-conversations
+    patch: |-
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: ai-gateway-conversations
+  - target:
       group: apps
       version: v1
       kind: Deployment

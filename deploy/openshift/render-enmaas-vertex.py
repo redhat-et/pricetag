@@ -18,6 +18,8 @@ def main() -> int:
         "GCP_CREDENTIAL_FILTER": "gcp-credential-filter.yaml",
         "HOST_OVERRIDE": "vertex-host-override.yaml",
         "UPSTREAM_CLUSTER": "vertex-cluster.yaml",
+        "ONLY_ACCESS": "vertex-only-access.yaml",
+        "ONLY_MODEL_CATALOG": "vertex-only-model-catalog.yaml",
     }
 
     for marker, filename in fragments.items():
