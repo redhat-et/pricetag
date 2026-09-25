@@ -101,7 +101,16 @@ fi
 # explicitly supplied file when ROTATE_SECRETS=true.
 if [[ "$PROFILE" == enmaas ]]; then
   [[ -n "${VERTEX_PROJECT:-}" ]] || die "VERTEX_PROJECT is required for PROFILE=enmaas"
-  [[ -n "${VERTEX_IMAGE_TAG:-}" ]] || die "VERTEX_IMAGE_TAG is required for PROFILE=enmaas (use the mirrored immutable practice-* tag)"
+  : "${PRAXIS_SOURCE_SHA:?Set PRAXIS_SOURCE_SHA to a pushed ET praxis-ai commit}"
+  if [[ "${BUILD_PRAXIS_IMAGE:-true}" == true ]]; then
+    VERTEX_IMAGE_TAG="$(NAMESPACE="$NAMESPACE" PRAXIS_SOURCE_SHA="$PRAXIS_SOURCE_SHA" \
+      PRAXIS_SOURCE_REPO="${PRAXIS_SOURCE_REPO:-https://github.com/redhat-et/praxis-ai.git}" \
+      PRAXIS_AI_FEATURES="${PRAXIS_AI_FEATURES:-full,gcp-adc-filter}" \
+      "$SCRIPT_DIR/build-praxis-et.sh")"
+    export VERTEX_IMAGE_TAG
+  else
+    : "${VERTEX_IMAGE_TAG:?Set VERTEX_IMAGE_TAG when BUILD_PRAXIS_IMAGE=false}"
+  fi
   if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true || "${ROTATE_VERTEX_SA_KEY:-false}" == true ]]; then
     [[ -n "${VERTEX_SA_KEY_FILE:-}" && -f "$VERTEX_SA_KEY_FILE" ]] || \
       die "VERTEX_SA_KEY_FILE must point to the Vertex service-account JSON file to create/rotate vertex-sa-key"
