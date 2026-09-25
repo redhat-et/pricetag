@@ -20,7 +20,7 @@ IMAGE_TAG="practice-${PRAXIS_SOURCE_SHA:0:8}"
 [[ "$PRAXIS_AI_FEATURES" == full,gcp-adc-filter ]] || \
   die "PRAXIS_AI_FEATURES must be full,gcp-adc-filter for the Vertex trial"
 
-oc -n "$NAMESPACE" apply -f - <<YAML
+oc -n "$NAMESPACE" apply -f - >&2 <<YAML
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
@@ -50,7 +50,7 @@ spec:
       name: ${IMAGE_STREAM_NAME}:${IMAGE_TAG}
 YAML
 
-oc -n "$NAMESPACE" start-build "bc/${BUILD_CONFIG_NAME}" --wait
+oc -n "$NAMESPACE" start-build "bc/${BUILD_CONFIG_NAME}" --wait >&2
 
 IMAGE_DIGEST="$(oc -n "$NAMESPACE" get istag "${IMAGE_STREAM_NAME}:${IMAGE_TAG}" \
   -o jsonpath='{.image.dockerImageReference}' | sed 's/.*@//')"
