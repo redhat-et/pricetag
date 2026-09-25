@@ -94,3 +94,14 @@ patches:
         value:
           name: METRICS_SECURE
           value: "false"
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: metering-service
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MONTHLY_TOKEN_QUOTA
+          value: "10000000000"
