@@ -287,8 +287,12 @@ data:
           - filter: model_to_header
             header: X-Model
 
-          # EnMaaS Vertex filter classifies vertex/* models, rewrites those
-          # requests, and leaves every other supplier's body untouched.
+          # EnMaaS resolves the stable public Vertex model ID to the internal
+          # provider target before the Vertex dialect filter runs.
+          # ENMAAS_VERTEX_MODEL_TO_PROVIDER_FILTER
+
+          # Vertex translates only vertex/* target models and leaves every
+          # other supplier's body untouched.
           # ENMAAS_VERTEX_FILTER
 
           - filter: router
@@ -373,7 +377,7 @@ data:
               - name: "anthropic-version"
                 value: "2023-06-01"
             request_remove:
-              - x-praxis-ai-vertex-route
+              - x-praxis-ai-provider
 
           # Override Host for Anthropic: extra_request_headers (from
           # credential_injection) are applied after headers_to_set, so

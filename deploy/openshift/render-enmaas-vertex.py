@@ -12,6 +12,7 @@ def main() -> int:
     rendered = rendered_path.read_text()
     fragments = {
         "MODEL_CATALOG": "model-catalog.yaml",
+        "MODEL_TO_PROVIDER_FILTER": "model-to-provider.yaml",
         "ROUTER_ROUTE": "router-route.yaml",
         "FILTER": "vertex-filter.yaml",
         "GCP_CREDENTIAL_FILTER": "gcp-credential-filter.yaml",

@@ -240,10 +240,11 @@ production data, or migrate production secrets automatically.
 
 The EnMaaS overlay adds Vertex as another supplier behind the existing Praxis
 `unified` listener and canonical `ai-gateway` Route at `/v1/messages`. It uses
-the existing Praxis Deployment and API endpoint: a request with model
-`vertex/claude-sonnet-4-5` routes to Vertex; existing Claude, Qwen, and GLM
-model routes continue to use their current suppliers. Other profiles do not
-enable the Vertex route or mount its service-account Secret.
+the existing Praxis Deployment and API endpoint: clients send the stable model
+ID `claude-sonnet-4-5`; Praxis maps it to the Vertex route and internal target
+model. Existing Claude, Qwen, and GLM model routes continue to use their
+current suppliers. Other profiles do not enable the Vertex route or mount its
+service-account Secret.
 
 Before deploying EnMaaS Vertex:
 
