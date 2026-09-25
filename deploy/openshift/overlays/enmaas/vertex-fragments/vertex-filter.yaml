@@ -1,8 +1,3 @@
 - filter: vertex
   project: "${VERTEX_PROJECT}"
   location: global
-  # Vertex rejects newer Claude API beta headers (for example,
-  # advisor-tool-2026-03-01). Keep only the beta currently supported by the
-  # deployed Vertex translation path; unsupported client headers are removed.
-  beta_allowlist:
-    - interleaved-thinking-2025-05-14
