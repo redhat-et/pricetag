@@ -64,12 +64,28 @@ patches:
       kind: Deployment
       name: praxis
     patch: |-
-      - op: remove
-        path: /spec/template/spec/containers/0/ports/2
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: praxis
+      spec:
+        template:
+          spec:
+            containers:
+              - name: praxis
+                ports:
+                  - containerPort: 8082
+                    $patch: delete
   - target:
       version: v1
       kind: Service
       name: praxis
     patch: |-
-      - op: remove
-        path: /spec/ports/2
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: praxis
+      spec:
+        ports:
+          - port: 8082
+            $patch: delete
