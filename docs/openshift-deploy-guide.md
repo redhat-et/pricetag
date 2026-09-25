@@ -248,14 +248,15 @@ service-account Secret.
 
 Before deploying EnMaaS Vertex:
 
-1. Wait until the GCP key-file credentials, Vertex dialect filter, and
-   `token_count` StreamBuffer fix are merged. Build from a pushed `praxis-proxy/ai`
-   `main` commit containing all three, with
-   `PRAXIS_AI_FEATURES=full,gcp-adc-filter`. Record the source commit and built
-   image digest from the build record. Mirror that same digest into EnMaaS as an
-   immutable `practice-<source-sha>` tag and set `VERTEX_IMAGE_TAG` to it.
-   `deploy.sh` does not build or mirror images; the EnMaaS Praxis Deployment
-   must use this feature-enabled image.
+1. Set `PRAXIS_SOURCE_SHA` to the full SHA of a pushed
+   `redhat-et/praxis-ai` commit containing the GCP key-file credential filter,
+   Vertex dialect filter, model-to-provider mapping, and `token_count`
+   StreamBuffer fix. EnMaaS deployment builds that ET commit in OpenShift with
+   `PRAXIS_AI_FEATURES=full,gcp-adc-filter` by default and deploys its
+   commit-derived `practice-*` tag. Record the source SHA and the image digest
+   printed by `build-praxis-et.sh`. To use an already-built/mirrored image,
+   set `BUILD_PRAXIS_IMAGE=false` and provide its `VERTEX_IMAGE_TAG`; ensure it
+   came from the same pushed source commit and feature set.
 2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
 3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
    JSON file. The deploy script creates `vertex-sa-key` from that file and
@@ -267,8 +268,9 @@ Before deploying EnMaaS Vertex:
 This is the initial key-file credential path; GCP Workload Identity Federation
 is not included. Requests use the existing Anthropic Messages endpoint and are
 authenticated by PriceTag API keys, pass through the EnMaaS model-access policy,
-and meter through the existing gateway path. Vertex calls retain the
-`vertex/` model prefix for attribution.
+and meter through the existing gateway path. Clients use the stable public ID
+`claude-sonnet-4-5`; Praxis maps it to the internal `vertex/claude-sonnet-4-5`
+target and restores the public ID in responses and metering.
 
 ---
 
