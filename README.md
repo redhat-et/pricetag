@@ -1,6 +1,13 @@
-# PriceTag
+# PriceTag — The Enterprise AI Control Plane
 
-PriceTag is a self-service LLM gateway platform for OpenShift deployments.
+PriceTag is the enterprise AI control plane for safe access, cost governance,
+provider portability, and operational accountability.
+
+It provides a self-service LLM gateway platform for OpenShift deployments,
+with authenticated inference, hosted-model routing, usage metering, quota
+controls, operational dashboards, and a path to transparent provider
+migrations.
+
 This repository is the deployment and operations home for the platform.
 
 ## Deploy
