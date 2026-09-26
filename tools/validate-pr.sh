@@ -11,6 +11,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
 export VERTEX_IMAGE_TAG=practice-ci
+export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
 export QWEN_ENDPOINT=qwen.ci.example.com
@@ -49,7 +50,7 @@ python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
@@ -73,6 +74,7 @@ grep -q 'gcp_adc' "$TMP_DIR/praxis.yaml"
 grep -q '@sha256:' "$TMP_DIR/enmaas-rendered.yaml"
 grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
+grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 
 echo "== secret-pattern scan =="
 if git grep -n -I -E 'BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}' -- ':!*.lock'; then

@@ -11,6 +11,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
 export VERTEX_IMAGE_TAG=practice-ci
+export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
 export QWEN_ENDPOINT=qwen.ci.example.com
@@ -41,7 +42,7 @@ else
       >"$TMP_DIR/enmaas-vertex.yaml"; then
     fail "EnMaaS Vertex fragment rendering failed"
   else
-    envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST}' \
       <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
     yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
       "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml" || fail "Praxis ConfigMap data is missing"
@@ -56,6 +57,8 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
   if grep -q 'allow_public_admin: true' "$TMP_DIR/praxis.yaml"; then
     fail "Praxis enables insecure_options.allow_public_admin"
   fi
+  grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml" || \
+    fail "Praxis metering calls have no internal authentication file configured"
 
   for deployment in praxis maas-api metering-service; do
     for expression in \

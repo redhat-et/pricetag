@@ -15,7 +15,7 @@ images:
     digest: sha256:bbf5b77a3194ea477f236128d2f1499ac8b89957b0798047d1f97c311a069a97
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
-    digest: sha256:05e9d104d251287c000ff577842b56b26054aa2157a20a26cbee434a25ed2993
+    digest: ${METERING_IMAGE_DIGEST}
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
     digest: sha256:66207f02fc8190359923bb8b24b10ff6090cc4b353caea90d06672611763ffb9
@@ -139,3 +139,39 @@ patches:
         value:
           name: MONTHLY_TOKEN_QUOTA
           value: "10000000000"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: M2M_AUTH_REQUIRED
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: M2M_SHARED_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: metering-internal-auth
+              key: token
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: READ_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: metering-readonly-db-url
+              key: READ_DATABASE_URL
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DASHBOARD_CACHE_ENABLED
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DASHBOARD_USE_ROLLUPS
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DASHBOARD_CACHE_TTL_SECONDS
+          value: "60"

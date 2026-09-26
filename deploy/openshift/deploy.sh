@@ -117,6 +117,19 @@ if [[ "$PROFILE" == enmaas ]]; then
   else
     : "${VERTEX_IMAGE_TAG:?Set VERTEX_IMAGE_TAG when BUILD_PRAXIS_IMAGE=false}"
   fi
+  : "${METERING_SOURCE_SHA:?Set METERING_SOURCE_SHA to a pushed pricetag-metering commit}"
+  if [[ "${BUILD_METERING_IMAGE:-true}" == true ]]; then
+    METERING_IMAGE_TAG="$(NAMESPACE="$NAMESPACE" METERING_SOURCE_SHA="$METERING_SOURCE_SHA" \
+      METERING_SOURCE_REPO="${METERING_SOURCE_REPO:-https://github.com/redhat-et/pricetag-metering.git}" \
+      "$SCRIPT_DIR/build-metering-et.sh")"
+    export METERING_IMAGE_TAG
+    METERING_IMAGE_DIGEST="$(oc -n "$NAMESPACE" get istag "metering-service:${METERING_IMAGE_TAG}" \
+      -o jsonpath='{.image.dockerImageReference}' | sed 's/.*@//')"
+    export METERING_IMAGE_DIGEST
+  else
+    : "${METERING_IMAGE_TAG:?Set METERING_IMAGE_TAG when BUILD_METERING_IMAGE=false}"
+    : "${METERING_IMAGE_DIGEST:?Set METERING_IMAGE_DIGEST when BUILD_METERING_IMAGE=false}"
+  fi
   if ! secret_exists vertex-sa-key || [[ "$ROTATE_SECRETS" == true || "${ROTATE_VERTEX_SA_KEY:-false}" == true ]]; then
     [[ -n "${VERTEX_SA_KEY_FILE:-}" && -f "$VERTEX_SA_KEY_FILE" ]] || \
       die "VERTEX_SA_KEY_FILE must point to the Vertex service-account JSON file to create/rotate vertex-sa-key"
@@ -157,6 +170,17 @@ if ! secret_exists pricetag-session || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
+# The metering service's gateway-facing entitlement and event APIs use a
+# private bearer token. Preserve it across reruns; rotate only when explicitly
+# requested so a gateway rollout cannot invalidate active traffic unexpectedly.
+if [[ "$PROFILE" == enmaas ]] && \
+   (! secret_exists metering-internal-auth || [[ "${ROTATE_METERING_INTERNAL_AUTH:-false}" == true ]]); then
+  METERING_INTERNAL_TOKEN="${METERING_INTERNAL_TOKEN:-$(openssl rand -hex 32)}"
+  oc -n "$NAMESPACE" create secret generic metering-internal-auth \
+    --from-literal=token="$METERING_INTERNAL_TOKEN" \
+    --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+fi
+
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
 # is installed once per cluster; the namespaced Cluster is safe to reconcile.
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
@@ -182,6 +206,34 @@ envsubst "\${NAMESPACE}" \
   < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
 oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
   --for=condition=Ready --timeout=10m
+
+if [[ "$PROFILE" == enmaas ]]; then
+  if ! secret_exists metering-reader-password || [[ "${ROTATE_METERING_READER_PASSWORD:-false}" == true ]]; then
+    METERING_READER_PASSWORD="${METERING_READER_PASSWORD:-$(openssl rand -hex 32)}"
+    oc -n "$NAMESPACE" create secret generic metering-reader-password \
+      --from-literal=username=metering_reader \
+      --from-literal=password="$METERING_READER_PASSWORD" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  fi
+  oc -n "$NAMESPACE" apply -f "$SCRIPT_DIR/database/readonly-replica/10-databaserole.yaml"
+  for _ in $(seq 1 60); do
+    if [[ "$(oc -n "$NAMESPACE" get databaserole metering-reader \
+      -o jsonpath='{.status.applied}' 2>/dev/null || true)" == true ]]; then
+      break
+    fi
+    sleep 2
+  done
+  [[ "$(oc -n "$NAMESPACE" get databaserole metering-reader \
+    -o jsonpath='{.status.applied}' 2>/dev/null || true)" == true ]] || \
+    die "metering-reader DatabaseRole did not become applied"
+  oc -n "$NAMESPACE" exec -i aigateway-pg-1 -- psql -U postgres -d aigateway \
+    -v ON_ERROR_STOP=1 -f - < "$SCRIPT_DIR/database/readonly-replica/20-grants.sql"
+  READER_PASSWORD="$(oc -n "$NAMESPACE" get secret metering-reader-password \
+    -o jsonpath='{.data.password}' | base64 --decode)"
+  oc -n "$NAMESPACE" create secret generic metering-readonly-db-url \
+    --from-literal=READ_DATABASE_URL="postgresql://metering_reader:${READER_PASSWORD}@aigateway-pg-r:5432/aigateway?sslmode=disable" \
+    --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+fi
 
 binding_name=""
 case "$PROFILE" in
