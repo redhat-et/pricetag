@@ -70,7 +70,7 @@ grep -qx 'dashboard' <<<"$routes"
 echo "== EnMaaS Vertex contract =="
 grep -q 'model_to_provider' "$TMP_DIR/praxis.yaml"
 grep -q 'gcp_adc' "$TMP_DIR/praxis.yaml"
-grep -q 'practice-ci' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q '@sha256:' "$TMP_DIR/enmaas-rendered.yaml"
 grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
 
