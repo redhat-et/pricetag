@@ -6,18 +6,19 @@ namespace: enmaas
 resources:
   - namespace.yaml
   - maas-api-rbac-binding.yaml
+  - network-policy.yaml
   - ../../base
 
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/maas-api
-    newTag: standalone-1238aafa
+    digest: sha256:bbf5b77a3194ea477f236128d2f1499ac8b89957b0798047d1f97c311a069a97
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/metering-service
-    newTag: practice-05e9d104
+    digest: sha256:05e9d104d251287c000ff577842b56b26054aa2157a20a26cbee434a25ed2993
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
-    newTag: ${VERTEX_IMAGE_TAG}
+    digest: sha256:66207f02fc8190359923bb8b24b10ff6090cc4b353caea90d06672611763ffb9
 
 patches:
   - path: praxis-vertex-secret-mount.yaml
