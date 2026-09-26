@@ -7,11 +7,9 @@ metadata:
 data:
   praxis.yaml: |
     admin:
-      address: "0.0.0.0:9901"
+      address: "127.0.0.1:9901"
 
-    insecure_options:
-      allow_public_admin: true
-
+    insecure_options: {}
     listeners:
       - name: openai
         address: "0.0.0.0:8081"
@@ -438,10 +436,21 @@ spec:
       labels:
         app: praxis
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: praxis
           image: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai:latest
           args: ["-c", "/etc/praxis/praxis.yaml"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 8081
               name: openai
@@ -480,6 +489,7 @@ spec:
               memory: 256Mi
           readinessProbe:
             httpGet:
+              host: 127.0.0.1
               path: /healthy
               port: 9901
             initialDelaySeconds: 2
@@ -507,6 +517,3 @@ spec:
     - name: unified
       port: 8084
       targetPort: 8084
-    - name: admin
-      port: 9901
-      targetPort: 9901

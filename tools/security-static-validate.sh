@@ -60,16 +60,21 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
   for deployment in praxis maas-api metering-service; do
     for expression in \
       '.spec.template.spec.securityContext.runAsNonRoot == true' \
-      '.spec.template.spec.automountServiceAccountToken == false' \
       '.spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation == false' \
       '.spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem == true' \
-      '((.spec.template.spec.containers[0].securityContext.capabilities.drop // []) | index("ALL")) != null' \
+      '((.spec.template.spec.containers[0].securityContext.capabilities.drop // []) | contains(["ALL"])) == true' \
       '.spec.template.spec.containers[0].securityContext.seccompProfile.type == "RuntimeDefault"'; do
       if ! yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | $expression" \
           "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
         fail "$deployment does not satisfy security context requirement: $expression"
       fi
     done
+    token_requirement='false'
+    [[ "$deployment" == "maas-api" ]] && token_requirement='true'
+    if ! yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | .spec.template.spec.automountServiceAccountToken == $token_requirement" \
+        "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "$deployment has incorrect ServiceAccount token automount policy (expected $token_requirement)"
+    fi
   done
 
   if yq -e 'select(.kind == "Service" and .metadata.name == "praxis") | .spec.ports[] | select(.port == 9901)' \
