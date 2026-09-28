@@ -11,6 +11,7 @@ PROFILE="${PROFILE:-dogfood}"
 STORAGE_CLASS="${STORAGE_CLASS:-ibmc-vpc-block-10iops-tier}"
 ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
+METERING_INTERNAL_AUTH_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
@@ -53,6 +54,8 @@ export GATEWAY_HOST GATEWAY_URL
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
 fi
+
+METERING_INTERNAL_AUTH_CHANGED=false
 
 [[ -n "${COS_BUCKET:-}" && -n "${COS_ENDPOINT:-}" && -n "${COS_REGION:-}" ]] || \
   die "COS_BUCKET, COS_ENDPOINT, and COS_REGION are required for the CNPG profile"
@@ -179,6 +182,7 @@ if [[ "$PROFILE" == enmaas ]] && \
   oc -n "$NAMESPACE" create secret generic metering-internal-auth \
     --from-literal=token="$METERING_INTERNAL_TOKEN" \
     --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  METERING_INTERNAL_AUTH_CHANGED=true
 fi
 
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
@@ -258,8 +262,12 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
+
+if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
+  oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
+fi
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
@@ -268,8 +276,13 @@ oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 # Wait for every path route to be admitted before retiring old gateway hosts.
 # Route status keeps conditions under status.ingress, so oc wait's generic
 # condition handler is not reliable here.
-for route in ai-gateway ai-gateway-chat-completions ai-gateway-responses \
-  ai-gateway-conversations ai-gateway-models; do
+if [[ "$PROFILE" == enmaas ]]; then
+  required_routes=(ai-gateway ai-gateway-models)
+else
+  required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
+    ai-gateway-conversations ai-gateway-models)
+fi
+for route in "${required_routes[@]}"; do
   admitted=false
   for _ in {1..120}; do
     if [[ "$(oc -n "$NAMESPACE" get route "$route" \
