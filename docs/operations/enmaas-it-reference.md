@@ -77,13 +77,13 @@ model ID.
 ### Dashboard and administration
 
 ```text
-https://dashboard-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/welcome
+https://dashboard.enmaas.devshift.net/welcome
 ```
 
 The authenticated dashboard is:
 
 ```text
-https://dashboard-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/dashboard
+https://dashboard.enmaas.devshift.net/dashboard
 ```
 
 These routes serve the authenticated dashboard, usage views, key management,
