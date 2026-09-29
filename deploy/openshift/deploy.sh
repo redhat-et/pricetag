@@ -265,6 +265,15 @@ fi
 envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
+# The dashboard Route receives its host from OpenShift. Pass that canonical
+# host into the embedded welcome page so its Dashboard link never falls back
+# to the template placeholder. This is deliberately derived after apply: the
+# route host is not known when the static manifest is rendered.
+dashboard_host="$(oc -n "$NAMESPACE" get route dashboard -o jsonpath='{.spec.host}')"
+[[ -n "$dashboard_host" ]] || die "dashboard Route has no host"
+oc -n "$NAMESPACE" set env deployment/metering-service \
+  "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null
+
 if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
 fi
