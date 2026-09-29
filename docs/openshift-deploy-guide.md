@@ -262,7 +262,12 @@ Before deploying EnMaaS Vertex:
    printed by `build-praxis-et.sh`. To use an already-built/mirrored image,
    set `BUILD_PRAXIS_IMAGE=false` and provide its `VERTEX_IMAGE_TAG`; ensure it
    came from the same pushed source commit and feature set.
-2. Set `VERTEX_PROJECT` to the GCP project used by the service account.
+2. Set `VERTEX_PROJECT` to the GCP project in which the enabled Vertex Anthropic
+   models are available and to which the service account has access. Change
+   `VERTEX_PROJECT` and `VERTEX_SA_KEY_FILE` together: rotating only the Secret
+   leaves Praxis configured for the previous project and can make all Vertex
+   callouts fail authorization. The deploy script renders the project and
+   mounts the key as one coordinated rollout.
 3. For the initial install, set `VERTEX_SA_KEY_FILE` to the service-account
    JSON file. The deploy script creates `vertex-sa-key` from that file and
    mounts it into the existing Praxis pods. The Secret is preserved on later
