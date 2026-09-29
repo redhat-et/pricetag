@@ -14,6 +14,7 @@ export VERTEX_IMAGE_TAG=practice-ci
 export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
+export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 
@@ -50,7 +51,7 @@ python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
@@ -67,7 +68,9 @@ grep -qx 'ai-gateway-chat-completions' <<<"$routes"
 grep -qx 'ai-gateway-responses' <<<"$routes"
 grep -qx 'ai-gateway-conversations' <<<"$routes"
 grep -qx 'ai-gateway-models' <<<"$routes"
-grep -qx 'dashboard' <<<"$routes"
+grep -qx 'dashboard-welcome' <<<"$routes"
+grep -qx 'dashboard-page' <<<"$routes"
+! grep -qx 'dashboard' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
 
 echo "== EnMaaS Vertex contract =="

@@ -54,7 +54,8 @@ ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.d
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
 GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
 GATEWAY_URL="${GATEWAY_URL:-https://${GATEWAY_HOST}}"
-export GATEWAY_HOST GATEWAY_URL
+DASHBOARD_HOST="${DASHBOARD_HOST:-dashboard-${NAMESPACE}.${ROUTE_DOMAIN}}"
+export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST
 
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
@@ -285,14 +286,14 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical
 # host into the embedded welcome page so its Dashboard link never falls back
 # to the template placeholder. This is deliberately derived after apply: the
 # route host is not known when the static manifest is rendered.
-dashboard_host="$(oc -n "$NAMESPACE" get route dashboard -o jsonpath='{.spec.host}')"
+dashboard_host="$(oc -n "$NAMESPACE" get route dashboard-welcome -o jsonpath='{.spec.host}')"
 [[ -n "$dashboard_host" ]] || die "dashboard Route has no host"
 oc -n "$NAMESPACE" set env deployment/metering-service \
   "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null

@@ -77,11 +77,19 @@ model ID.
 ### Dashboard and administration
 
 ```text
-https://dashboard-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/
+https://dashboard-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/welcome
 ```
 
-This route serves the authenticated dashboard, usage views, key management,
+The authenticated dashboard is:
+
+```text
+https://dashboard-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/dashboard
+```
+
+These routes serve the authenticated dashboard, usage views, key management,
 quota management, provider/model administration, and operational status APIs.
+The dashboard host intentionally has no catch-all `/` Route: explicit UI/API
+paths keep the private metering endpoints off the public router.
 
 OpenAI routes use `Authorization: Bearer` client authentication; the
 Anthropic Messages route uses `x-api-key` authentication.
