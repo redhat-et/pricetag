@@ -66,6 +66,23 @@ verify backup/restore, and complete the `usage_events.event_id` idempotency
 migration. The migrated data has no duplicate event IDs, but no unique
 event-ID constraint is installed yet.
 
+### EnMaaS capacity baseline — 2026-09-29
+
+These are bounded smoke measurements, not a capacity guarantee:
+
+- 250 concurrent read-only entitlement checks completed successfully in about
+  one second without adding usage-event rows.
+- During the read-only burst, RDS CPU averaged about 2%, peaked below 3%,
+  connections peaked at 16, and Performance Insights DB load peaked at 1.
+- The metering service runs two replicas; both remained ready with no rollup or
+  parity errors.
+- A post-load GLM inference still returned HTTP 200 and wrote a normal event
+  to RDS.
+
+The next scale test should use sustained traffic and measure entitlement p95/p99,
+metering pool wait time, RDS connections, and event-ingestion latency. User
+count alone is not a capacity limit; active request rate and token volume are.
+
 ## Current architecture (post-cutover)
 
 ```mermaid

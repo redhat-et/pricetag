@@ -55,4 +55,6 @@ initial migration.
   application ingestion is deployed.
 - RDS p95 entitlement and event-ingestion latency meet the agreed SLO.
 - Two-replica metering behavior has no rollup/parity errors.
+- A bounded read-only burst has been measured, but sustained 700-user traffic
+  remains a separate load-test gate.
 - Full rollback has been rehearsed or explicitly accepted by the owner.
