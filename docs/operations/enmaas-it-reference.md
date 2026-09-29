@@ -36,6 +36,12 @@ The OpenAI service-account credential is stored separately in the same Secret
 under `OPENAI_API_KEY`; it must be rotated independently from both Vertex and
 GLM credentials.
 
+The metering service runs with two replicas. Request handling is database-backed
+and the session secret is shared, while response/quota caches are intentionally
+per-pod. Rollup backfill and maintenance are database-idempotent but run from
+each replica, so the deployment should be monitored for duplicate maintenance
+work and pool pressure as traffic grows.
+
 ## Container images
 
 | Component | Deployed image/digest | Source | Containerfile/Dockerfile bases |
