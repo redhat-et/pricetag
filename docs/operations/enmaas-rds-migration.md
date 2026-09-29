@@ -49,6 +49,30 @@ initial migration.
 
 ## Required gates before decommissioning CNPG
 
+## Capacity baseline — 2026-09-29
+
+The following benchmark exercised the metering entitlement GET path through
+the two-replica metering service using synthetic identities. It performed
+read-only checks only; it did not call a provider or create usage events.
+
+| Concurrent checks | Requests | Success | p50 | p95 | p99 | Max |
+|---:|---:|---:|---:|---:|---:|---:|
+| 50 | 752 | 752 | 146 ms | 495 ms | 524 ms | 525 ms |
+| 100 | 1,309 | 1,309 | 195 ms | 587 ms | 625 ms | 679 ms |
+| 250 | 2,971 | 2,971 | 326 ms | 632 ms | 671 ms | 727 ms |
+
+RDS CloudWatch observations after the benchmark were approximately:
+
+- CPU average 2%; peak below 3%;
+- maximum connections 19;
+- DB load maximum 1;
+- read latency 0 seconds; write latency approximately 7 ms.
+
+The post-test GLM inference, model discovery, dashboard health/readiness, and
+RDS ledger checks all passed. This is a bounded baseline, not a 700-user SLO:
+the next test should use sustained traffic, realistic request rates, and
+application pool-wait metrics.
+
 - RDS automated backup and point-in-time restore verified.
 - RDS security groups no longer permit unnecessary public exposure.
 - Unique `usage_events(event_id)` constraint installed after duplicate-safe
