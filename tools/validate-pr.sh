@@ -63,9 +63,11 @@ fi
 echo "== EnMaaS route contract =="
 routes="$(yq -r 'select(.kind == "Route") | .metadata.name' "$TMP_DIR/enmaas-rendered.yaml" | sort)"
 grep -qx 'ai-gateway' <<<"$routes"
+grep -qx 'ai-gateway-chat-completions' <<<"$routes"
+grep -qx 'ai-gateway-responses' <<<"$routes"
+grep -qx 'ai-gateway-conversations' <<<"$routes"
 grep -qx 'ai-gateway-models' <<<"$routes"
 grep -qx 'dashboard' <<<"$routes"
-! grep -Eq 'ai-gateway-(chat-completions|responses|conversations)' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
 
 echo "== EnMaaS Vertex contract =="

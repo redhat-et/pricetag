@@ -276,12 +276,8 @@ oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 # Wait for every path route to be admitted before retiring old gateway hosts.
 # Route status keeps conditions under status.ingress, so oc wait's generic
 # condition handler is not reliable here.
-if [[ "$PROFILE" == enmaas ]]; then
-  required_routes=(ai-gateway ai-gateway-models)
-else
-  required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
-    ai-gateway-conversations ai-gateway-models)
-fi
+required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
+  ai-gateway-conversations ai-gateway-models)
 for route in "${required_routes[@]}"; do
   admitted=false
   for _ in {1..120}; do

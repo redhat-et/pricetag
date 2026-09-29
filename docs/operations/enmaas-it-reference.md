@@ -10,25 +10,31 @@ profile.
 
 ## Current operating mode
 
-EnMaaS is currently running in **Vertex Anthropic + Curvebender GLM mode**:
+EnMaaS is currently running in **Vertex Anthropic + Curvebender GLM + OpenAI mode**:
 
 ```text
 Client → OpenShift Route → Praxis → Google Vertex AI Anthropic models
                          └→ Curvebender/LiteLLM GLM 5.3
+                         └→ api.openai.com OpenAI models
                          ├→ MaaS API (API-key validation)
                          └→ Metering service (quota and usage)
 ```
 
 The AI Gateway Controller, MaaS Controller, IPP, Kuadrant, Authorino, and
-KServe are not deployed in this environment. Direct OpenAI and Qwen inference
-routes remain disabled. Claude requests are routed through Vertex Anthropic;
-the public GLM model ID `rits/zai-org/glm-5-3` is routed through the private
-Curvebender/LiteLLM upstream.
+KServe are not deployed in this environment. Qwen inference remains disabled.
+Claude requests are routed through Vertex Anthropic; the public GLM model ID
+`rits/zai-org/glm-5-3` is routed through the private Curvebender/LiteLLM
+upstream; OpenAI-compatible requests use the project-scoped OpenAI service
+account key and route to `api.openai.com`.
 
 The GLM credential is stored in the EnMaaS `provider-credentials` Secret under
 `CB_LITELLM_API_KEY`. It is the same credential used by the validated old
 dogfood `cb-litellm-fid` Secret and must be rotated separately from the Vertex
 service-account key.
+
+The OpenAI service-account credential is stored separately in the same Secret
+under `OPENAI_API_KEY`; it must be rotated independently from both Vertex and
+GLM credentials.
 
 ## Container images
 
@@ -53,7 +59,10 @@ Hosted model servers are external and are not containers in EnMaaS.
 | URL | Backend | API and consumers |
 |---|---|---|
 | `https://ai-gateway-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/v1/messages` | Praxis `unified` port | Anthropic Messages-compatible inference API; Claude Code and Anthropic-compatible clients |
-| Same host, `/v1/models` | Praxis `unified` port | Vertex-hosted model catalog and client discovery |
+| Same host, `/v1/chat/completions` | Praxis `openai` port | OpenAI Chat Completions-compatible clients |
+| Same host, `/v1/responses` | Praxis `openai` port | OpenAI Responses-compatible clients |
+| Same host, `/v1/conversations` | Praxis `openai` port | OpenAI Conversations-compatible clients |
+| Same host, `/v1/models` | Praxis `unified` port | Anthropic and OpenAI model catalog/client discovery |
 
 The inference API uses an EnMaaS API key. Model selection is transparent to
 clients: the public model ID is mapped internally to the Vertex publisher
@@ -68,14 +77,8 @@ https://dashboard-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/
 This route serves the authenticated dashboard, usage views, key management,
 quota management, provider/model administration, and operational status APIs.
 
-The following inference routes are intentionally not active in Vertex-only
-mode:
-
-```text
-/v1/chat/completions
-/v1/responses
-/v1/conversations
-```
+OpenAI routes use `Authorization: Bearer` client authentication; the
+Anthropic Messages route uses `x-api-key` authentication.
 
 ## Private service routes
 

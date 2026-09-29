@@ -16,7 +16,7 @@ PriceTag has a fast, non-mutating Pull Request validation workflow:
 - Kustomize rendering for `test`, `dogfood`, and `enmaas` profiles.
 - EnMaaS Vertex fragment injection and nested Praxis configuration syntax.
 - EnMaaS public route contract.
-- EnMaaS Vertex-only model/configuration contract.
+- EnMaaS provider/model configuration contract.
 - Credential-pattern scans over tracked files.
 
 ## Safety boundary
