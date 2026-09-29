@@ -3,25 +3,32 @@
 This document is the IT-facing reference for the isolated EnMaaS PriceTag
 environment.
 
-**Last verified:** 2026-09-25  
+**Last verified:** 2026-09-29
 **Environment:** EnMaaS OpenShift cluster, namespace `enmaas`  
 **Production impact:** none; production is not a deployment target for this
 profile.
 
 ## Current operating mode
 
-EnMaaS is currently running in **Vertex-only mode**:
+EnMaaS is currently running in **Vertex Anthropic + Curvebender GLM mode**:
 
 ```text
 Client → OpenShift Route → Praxis → Google Vertex AI Anthropic models
+                         └→ Curvebender/LiteLLM GLM 5.3
                          ├→ MaaS API (API-key validation)
                          └→ Metering service (quota and usage)
 ```
 
 The AI Gateway Controller, MaaS Controller, IPP, Kuadrant, Authorino, and
-KServe are not deployed in this environment. Direct OpenAI, direct Anthropic,
-Qwen, and GLM inference routes are disabled. Their configuration and Secrets
-are retained only to preserve rollback capability.
+KServe are not deployed in this environment. Direct OpenAI and Qwen inference
+routes remain disabled. Claude requests are routed through Vertex Anthropic;
+the public GLM model ID `rits/zai-org/glm-5-3` is routed through the private
+Curvebender/LiteLLM upstream.
+
+The GLM credential is stored in the EnMaaS `provider-credentials` Secret under
+`CB_LITELLM_API_KEY`. It is the same credential used by the validated old
+dogfood `cb-litellm-fid` Secret and must be rotated separately from the Vertex
+service-account key.
 
 ## Container images
 
@@ -91,6 +98,11 @@ aiplatform.googleapis.com:443
 
 The Google service-account JSON is mounted through the OpenShift Secret
 `vertex-sa-key`; it is not stored in an image or repository.
+
+The new EnMaaS egress address `32.187.124.188` is allowlisted by the GLM
+upstream. A provider-only `/v1/models` probe returned HTTP 200 from both new
+Praxis pods on 2026-09-29; this validates network and credential access without
+performing inference.
 
 ## Verified Vertex-hosted models
 

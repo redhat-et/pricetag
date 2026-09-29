@@ -11,5 +11,6 @@
     - claude-opus-4-8
     - claude-opus-5
     - claude-opus-5-5
+    - rits/zai-org/glm-5-3
   group_metadata_key: "x-tenant-group"
   max_body_bytes: 33554432
