@@ -233,6 +233,22 @@ export CONFIRM_DEPLOYMENT=true
 ./deploy/openshift/deploy.sh
 ```
 
+For an externally managed PostgreSQL target such as RDS, set the backend mode
+and provide complete TLS-enabled connection URLs from the secure operations
+environment. The deploy script derives the MaaS, metering, and dashboard read
+Secrets from these values; it never writes them to a manifest:
+
+```bash
+export DATABASE_BACKEND=rds
+export RDS_DATABASE_URL='postgresql://aigateway:<password>@<rds-host>:5432/aigateway?sslmode=require'
+export RDS_READ_DATABASE_URL='postgresql://metering_reader:<password>@<rds-host>:5432/aigateway?sslmode=require'
+./deploy/openshift/deploy.sh
+```
+
+`DATABASE_BACKEND=cnpg` remains the default and keeps the existing CloudNativePG
+path. RDS mode preserves the CNPG resources for rollback but does not point
+applications at `aigateway-pg-rw` or create the CNPG read-replica grant.
+
 Run this from the repository containing the mirrored EnMaaS image tags. The script
 creates the namespace, CRDs, CNPG operator, database, applications, and Routes in that
 target only. It does not build images, create the AWS bucket, create the IAM role, copy

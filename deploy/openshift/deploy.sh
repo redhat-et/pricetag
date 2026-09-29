@@ -11,6 +11,7 @@ PROFILE="${PROFILE:-dogfood}"
 STORAGE_CLASS="${STORAGE_CLASS:-ibmc-vpc-block-10iops-tier}"
 ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
+DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
 METERING_INTERNAL_AUTH_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
@@ -44,6 +45,10 @@ case "$PROFILE" in
 esac
 [[ "$NAMESPACE" == "$expected_namespace" ]] || \
   die "PROFILE=$PROFILE requires NAMESPACE=$expected_namespace"
+case "$DATABASE_BACKEND" in
+  cnpg|rds) ;;
+  *) die "DATABASE_BACKEND must be cnpg or rds" ;;
+esac
 
 ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
@@ -80,17 +85,29 @@ else
     --dry-run=client -o yaml | oc apply -f -
 fi
 
-# These derived connection secrets are safe to reconcile on every run.
+# These derived connection secrets are safe to reconcile on every run. In RDS
+# mode, complete URLs are supplied by the operations environment; credentials
+# never enter a tracked manifest. The CNPG password is still maintained so a
+# retained CNPG cluster remains a rollback target.
+if [[ "$DATABASE_BACKEND" == rds ]]; then
+  : "${RDS_DATABASE_URL:?Set RDS_DATABASE_URL when DATABASE_BACKEND=rds}"
+  : "${RDS_READ_DATABASE_URL:?Set RDS_READ_DATABASE_URL when DATABASE_BACKEND=rds}"
+  MAAS_DATABASE_URL="${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
+  METERING_DATABASE_URL="${RDS_METERING_DATABASE_URL:-$RDS_DATABASE_URL}"
+else
+  MAAS_DATABASE_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable"
+  METERING_DATABASE_URL="$MAAS_DATABASE_URL"
+fi
 oc -n "$NAMESPACE" create secret generic postgresql-credentials \
   --from-literal=POSTGRES_USER=aigateway \
   --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
   --from-literal=POSTGRES_DB=aigateway \
-  --from-literal=MAAS_DB_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
-  --from-literal=METERING_DB_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
+  --from-literal=MAAS_DB_URL="$MAAS_DATABASE_URL" \
+  --from-literal=METERING_DB_URL="$METERING_DATABASE_URL" \
   --dry-run=client -o yaml | oc apply -f -
 
 oc -n "$NAMESPACE" create secret generic maas-db-config \
-  --from-literal=DB_CONNECTION_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable" \
+  --from-literal=DB_CONNECTION_URL="$MAAS_DATABASE_URL" \
   --dry-run=client -o yaml | oc apply -f -
 
 if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
@@ -212,6 +229,11 @@ oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
   --for=condition=Ready --timeout=10m
 
 if [[ "$PROFILE" == enmaas ]]; then
+  if [[ "$DATABASE_BACKEND" == rds ]]; then
+    oc -n "$NAMESPACE" create secret generic metering-readonly-db-url \
+      --from-literal=READ_DATABASE_URL="$RDS_READ_DATABASE_URL" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  else
   if ! secret_exists metering-reader-password || [[ "${ROTATE_METERING_READER_PASSWORD:-false}" == true ]]; then
     METERING_READER_PASSWORD="${METERING_READER_PASSWORD:-$(openssl rand -hex 32)}"
     oc -n "$NAMESPACE" create secret generic metering-reader-password \
@@ -237,6 +259,7 @@ if [[ "$PROFILE" == enmaas ]]; then
   oc -n "$NAMESPACE" create secret generic metering-readonly-db-url \
     --from-literal=READ_DATABASE_URL="postgresql://metering_reader:${READER_PASSWORD}@aigateway-pg-r:5432/aigateway?sslmode=disable" \
     --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  fi
 fi
 
 binding_name=""
