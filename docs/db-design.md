@@ -30,6 +30,42 @@ recovery objectives: **RPO ≈ seconds** (continuous WAL archiving), RTO ≈
 a restore-job spin-up, and any point-in-time since the oldest base
 backup restorable.
 
+## EnMaaS RDS backend — 2026-09-29
+
+The isolated EnMaaS environment now uses AWS RDS PostgreSQL as its application
+database. CNPG remains deployed and available as rollback insurance; it is no
+longer referenced by the MaaS API or metering-service connection Secrets.
+
+| Property | EnMaaS value |
+|---|---|
+| RDS identifier | `enmaas-db` |
+| Engine | PostgreSQL 16.15 |
+| Instance class | `db.m7g.xlarge` |
+| Availability | Multi-AZ |
+| Storage | 500 GiB gp3, autoscaling to 1 TiB |
+| Encryption | enabled |
+| Backup retention | 7 days (review before broader adoption) |
+| Application database | `aigateway` |
+| Application roles | `aigateway`, `metering_reader` |
+
+The target was initialized from a final frozen CNPG snapshot and validated
+through the live MaaS API, metering service, and Praxis gateway. The copied
+dataset contained 118,825 usage events, 336 API keys, 268 pricing rows, and
+1,854 hourly rollup rows. The obsolete
+`usage_events_backfill_bak_20260917` artifact was intentionally excluded.
+
+The RDS administration Secret is `enmaas-db` (`db.host`, `db.port`, `db.name`,
+`db.user`, `db.password`). Applications do not use that admin credential
+directly. They receive derived URLs through `maas-db-config/DB_CONNECTION_URL`,
+`postgresql-credentials/METERING_DB_URL`, and
+`metering-readonly-db-url/READ_DATABASE_URL`.
+
+The deployment supports `DATABASE_BACKEND=rds` with explicit primary/read
+URLs. Before broader use, restrict RDS security groups/public accessibility,
+verify backup/restore, and complete the `usage_events.event_id` idempotency
+migration. The migrated data has no duplicate event IDs, but no unique
+event-ID constraint is installed yet.
+
 ## Current architecture (post-cutover)
 
 ```mermaid
