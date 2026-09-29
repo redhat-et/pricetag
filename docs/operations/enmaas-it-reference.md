@@ -58,7 +58,7 @@ Hosted model servers are external and are not containers in EnMaaS.
 
 | URL | Backend | API and consumers |
 |---|---|---|
-| `https://ai-gateway-enmaas.apps.rosa.enmaas-prod.187f.p3.openshiftapps.com/v1/messages` | Praxis `unified` port | Anthropic Messages-compatible inference API; Claude Code and Anthropic-compatible clients |
+| `https://api.enmaas.devshift.net/v1/messages` | Praxis `unified` port | Anthropic Messages-compatible inference API; Claude Code and Anthropic-compatible clients |
 | Same host, `/v1/chat/completions` | Praxis `openai` port | OpenAI Chat Completions-compatible clients |
 | Same host, `/v1/responses` | Praxis `openai` port | OpenAI Responses-compatible clients |
 | Same host, `/v1/conversations` | Praxis `openai` port | OpenAI Conversations-compatible clients |
