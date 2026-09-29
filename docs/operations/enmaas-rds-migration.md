@@ -40,6 +40,23 @@ database from CloudNativePG to AWS RDS. It is not a production runbook.
 12. Only after backup/restore, idempotency, performance, and rollback gates
     pass may CNPG be decommissioned.
 
+## Post-cutover key reconciliation — 2026-09-29
+
+The old dogfood database was compared with RDS by API-key hash, not by
+plaintext credentials. Existing RDS rows were preserved; missing old rows were
+inserted idempotently, including associated people, identities, and profiles.
+
+- Hanna Loboda's existing key was present in both environments.
+- 16 active key rows for 15 other users were missing from RDS and were copied.
+- The old identity/profile rows were reconciled without overwriting newer RDS
+  records.
+- RDS now contains 352 API-key rows, 156 active rows, 283 people, 177
+  identities, and 101 user profiles.
+- The full GLM/MaaS/dashboard/RDS coverage gate passed after reconciliation.
+
+Plaintext API keys were never extracted from the old database: only stored key
+hashes and associated metadata were migrated.
+
 ## Rollback
 
 Stop application writers, restore the pre-RDS connection Secret values,
