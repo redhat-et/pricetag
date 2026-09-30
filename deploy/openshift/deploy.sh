@@ -49,7 +49,32 @@ case "$DATABASE_BACKEND" in
   cnpg|rds) ;;
   *) die "DATABASE_BACKEND must be cnpg or rds" ;;
 esac
-RDS_EGRESS_CIDR="${RDS_EGRESS_CIDR:-192.0.2.1/32}"
+if [[ "$DATABASE_BACKEND" == rds ]]; then
+  : "${RDS_EGRESS_CIDR:?Set RDS_EGRESS_CIDR to the approved RDS subnet or endpoint CIDR}"
+else
+  # The EnMaaS overlay still renders this field in CNPG mode; use a reserved,
+  # unroutable test CIDR so it cannot accidentally grant external access.
+  RDS_EGRESS_CIDR="${RDS_EGRESS_CIDR:-192.0.2.1/32}"
+fi
+validate_rds_cidr() {
+  RDS_EGRESS_CIDR="$RDS_EGRESS_CIDR" python3 - <<'PY'
+import ipaddress
+import os
+import sys
+
+value = os.environ["RDS_EGRESS_CIDR"]
+try:
+    network = ipaddress.ip_network(value, strict=False)
+except ValueError as exc:
+    print(f"ERROR: RDS_EGRESS_CIDR is not a valid CIDR: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+if network.prefixlen == 0:
+    print("ERROR: RDS_EGRESS_CIDR must not be a default route", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+validate_rds_cidr
 
 validate_rds_url() {
   local variable_name="$1"
@@ -83,24 +108,6 @@ if port not in {None, 5432}:
 sslmode = parse_qs(parsed.query).get("sslmode", [""])[-1]
 if sslmode not in {"require", "verify-ca", "verify-full"}:
     print(f"ERROR: {name} must require TLS with sslmode=require, verify-ca, or verify-full", file=sys.stderr)
-    raise SystemExit(1)
-PY
-}
-
-validate_rds_cidr() {
-  RDS_EGRESS_CIDR="$RDS_EGRESS_CIDR" python3 - <<'PY'
-import ipaddress
-import os
-import sys
-
-value = os.environ["RDS_EGRESS_CIDR"]
-try:
-    network = ipaddress.ip_network(value, strict=False)
-except ValueError as exc:
-    print(f"ERROR: RDS_EGRESS_CIDR is not a valid CIDR: {exc}", file=sys.stderr)
-    raise SystemExit(1)
-if network.prefixlen == 0:
-    print("ERROR: RDS_EGRESS_CIDR must not be a default route", file=sys.stderr)
     raise SystemExit(1)
 PY
 }
@@ -152,7 +159,6 @@ if [[ "$DATABASE_BACKEND" == rds ]]; then
   : "${RDS_EXPECTED_HOST:?Set RDS_EXPECTED_HOST to the approved EnMaaS RDS hostname}"
   [[ "$RDS_EXPECTED_HOST" != */* && "$RDS_EXPECTED_HOST" != *:* ]] || \
     die "RDS_EXPECTED_HOST must be a hostname, not a URL or path"
-  validate_rds_cidr
   validate_rds_url RDS_DATABASE_URL "$RDS_DATABASE_URL"
   validate_rds_url RDS_READ_DATABASE_URL "$RDS_READ_DATABASE_URL"
   MAAS_DATABASE_URL="${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
