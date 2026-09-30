@@ -12,11 +12,7 @@ STORAGE_CLASS="${STORAGE_CLASS:-ibmc-vpc-block-10iops-tier}"
 ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
-if [[ "$PROFILE" == enmaas ]]; then
-  METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-true}"
-else
-  METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
-fi
+METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
 export METERING_MODEL_POLICY_CHECK
 METERING_INTERNAL_AUTH_CHANGED=false
 METERING_PARTNER_API_CHANGED=false
@@ -30,6 +26,9 @@ PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 export KUBECONFIG="$PRICETAG_KUBECONFIG"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+[[ "$METERING_MODEL_POLICY_CHECK" == true || "$METERING_MODEL_POLICY_CHECK" == false ]] || \
+  die "METERING_MODEL_POLICY_CHECK must be true or false"
 
 [[ -f "$PRICETAG_KUBECONFIG" ]] || die "PRICETAG_KUBECONFIG does not point to a file"
 
@@ -218,8 +217,13 @@ if [[ "$PROFILE" == enmaas ]]; then
       PRAXIS_AI_FEATURES="${PRAXIS_AI_FEATURES:-full,gcp-adc-filter}" \
       "$SCRIPT_DIR/build-praxis-et.sh")"
     export VERTEX_IMAGE_TAG
+    VERTEX_IMAGE_DIGEST="$(oc -n "$NAMESPACE" get istag "praxis-ai:${VERTEX_IMAGE_TAG}" \
+      -o jsonpath='{.image.dockerImageReference}' | sed 's/.*@//')"
+    [[ "$VERTEX_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+      die "Praxis build output has no immutable image digest"
+    export VERTEX_IMAGE_DIGEST
   else
-    : "${VERTEX_IMAGE_TAG:?Set VERTEX_IMAGE_TAG when BUILD_PRAXIS_IMAGE=false}"
+    : "${VERTEX_IMAGE_DIGEST:?Set VERTEX_IMAGE_DIGEST when BUILD_PRAXIS_IMAGE=false}"
   fi
   : "${METERING_SOURCE_SHA:?Set METERING_SOURCE_SHA to a pushed pricetag-metering commit}"
   if [[ "${BUILD_METERING_IMAGE:-true}" == true ]]; then
@@ -292,12 +296,20 @@ fi
 # generate high-entropy tokens without printing them to the console.
 if [[ "$PROFILE" == enmaas ]] && \
    (! secret_exists metering-partner-api || [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" == true ]]); then
-  USAGE_REPORT_API_SECRET="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
-  MODEL_POLICY_API_SECRET="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
-  oc -n "$NAMESPACE" create secret generic metering-partner-api \
-    --from-literal=usage-report="$USAGE_REPORT_API_SECRET" \
-    --from-literal=model-policy="$MODEL_POLICY_API_SECRET" \
-    --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  (
+    umask 077
+    secret_dir="$(mktemp -d)"
+    trap 'rm -rf "$secret_dir"' EXIT
+    usage_report_secret="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
+    model_policy_secret="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
+    printf '%s' "$usage_report_secret" >"$secret_dir/usage-report"
+    printf '%s' "$model_policy_secret" >"$secret_dir/model-policy"
+    unset usage_report_secret model_policy_secret USAGE_REPORT_API_SECRET MODEL_POLICY_API_SECRET
+    oc -n "$NAMESPACE" create secret generic metering-partner-api \
+      --from-file=usage-report="$secret_dir/usage-report" \
+      --from-file=model-policy="$secret_dir/model-policy" \
+      --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  )
   METERING_PARTNER_API_CHANGED=true
 fi
 
@@ -384,7 +396,7 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${METERING_MODEL_POLICY_CHECK}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical

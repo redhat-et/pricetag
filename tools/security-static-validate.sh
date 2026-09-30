@@ -11,6 +11,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
 export VERTEX_IMAGE_TAG=practice-ci
+export VERTEX_IMAGE_DIGEST=sha256:1111111111111111111111111111111111111111111111111111111111111111
 export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
@@ -45,7 +46,7 @@ else
       >"$TMP_DIR/enmaas-vertex.yaml"; then
     fail "EnMaaS Vertex fragment rendering failed"
   else
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${METERING_MODEL_POLICY_CHECK}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
       <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
     yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
       "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml" || fail "Praxis ConfigMap data is missing"
@@ -112,6 +113,10 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
       fail "metering-service $secret_env must come from metering-partner-api Secret"
     fi
   done
+
+  if grep -Eq -- '--from-literal=(usage-report|model-policy)=' deploy/openshift/deploy.sh; then
+    fail "partner bearer tokens must not be passed in process arguments"
+  fi
 
   for route in dashboard-api-usage dashboard-api-model-policies; do
     if ! yq -e "select(.kind == \"Route\" and .metadata.name == \"$route\") | select(.spec.tls.termination == \"edge\" and .spec.tls.insecureEdgeTerminationPolicy == \"Redirect\")" \

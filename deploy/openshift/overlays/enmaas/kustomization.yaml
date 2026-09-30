@@ -19,7 +19,7 @@ images:
     digest: ${METERING_IMAGE_DIGEST}
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai
-    digest: sha256:66207f02fc8190359923bb8b24b10ff6090cc4b353caea90d06672611763ffb9
+    digest: ${VERTEX_IMAGE_DIGEST}
 
 patches:
   - target:

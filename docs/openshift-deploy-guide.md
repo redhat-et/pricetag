@@ -372,18 +372,21 @@ service integrations:
 | User model allowlist | `GET`, `PUT`, `DELETE /api/v1/model-policies/users/{username}/allowlist` | `MODEL_POLICY_API_SECRET` |
 
 The EnMaaS deploy script creates independent 256-bit bearer tokens in the
-`metering-partner-api` Secret on first deployment and preserves them on normal
-reruns. Give each token only to its intended service through the approved
-secret-distribution channel. Never put either token in browser code, URLs,
+`metering-partner-api` Secret on first deployment using protected temporary
+files, and preserves them on normal reruns. Give each token only to its
+intended service through the approved secret-distribution channel. Never put either token in browser code, URLs,
 configuration maps, or source control. To rotate them, set
 `ROTATE_METERING_PARTNER_API_SECRETS=true`, deploy, and update both consumers
 through that channel; rotation invalidates the old tokens.
 
-Enable `METERING_MODEL_POLICY_CHECK=true` only when the Metering model-policy
-API and the matching Praxis model-preflight support are deployed together. This
-causes Praxis to buffer the request body up to 32 MiB so the public model ID is
-checked before inference is forwarded. Keep partner APIs behind these
-authenticated routes; do not expose a catch-all route to the Metering service.
+`METERING_MODEL_POLICY_CHECK` defaults to `false`; while disabled, the rendered
+Praxis config omits the option so older images continue to load. Enable it only
+when the Metering model-policy API and matching Praxis model-preflight image are
+deployed together. The deploy script builds Praxis from the supplied pushed
+`PRAXIS_SOURCE_SHA` and pins the resulting digest. When enabled, Praxis buffers
+the request body up to 32 MiB so the public model ID is checked before
+inference is forwarded. Keep partner APIs behind these authenticated routes; do
+not expose a catch-all route to the Metering service.
 
 ### 4.3 CloudNativePG PostgreSQL
 
