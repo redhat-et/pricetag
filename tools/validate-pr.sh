@@ -114,10 +114,47 @@ done <<<"$dashboard_paths"
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
   done
 
+# Every Route on a public host carries that host's certificate, so no single
+# Route (or Route set) is the hidden holder of TLS for the host.
+if yq -e 'select(.kind == "Route" and .spec.host == "'"$GATEWAY_HOST"'" and .spec.tls.externalCertificate.name != "api-enmaas-tls")' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+  echo "a gateway Route does not reference api-enmaas-tls" >&2
+  exit 1
+fi
+if yq -e 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'" and .spec.tls.externalCertificate.name != "dashboard-enmaas-tls")' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+  echo "a dashboard Route does not reference dashboard-enmaas-tls" >&2
+  exit 1
+fi
+for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
+  yq -e 'select(.kind == "Role" and .metadata.name == "router-read-'"$tls_secret"'") | .rules[] | select(.resources[] == "secrets" and .resourceNames[] == "'"$tls_secret"'")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+  yq -e 'select(.kind == "RoleBinding" and .metadata.name == "router-read-'"$tls_secret"'") | .subjects[] | select(.kind == "ServiceAccount" and .name == "router" and .namespace == "openshift-ingress")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+done
+! grep -qE 'kind: Secret' deploy/openshift/overlays/enmaas/*.yaml
+
+# Compatibility Routes for the legacy gateway host render standalone and never
+# touch the canonical host.
+LEGACY_GATEWAY_HOST=ai-gateway-enmaas.apps.example.test envsubst '${NAMESPACE} ${LEGACY_GATEWAY_HOST}' \
+  < deploy/openshift/overlays/enmaas/legacy-gateway-routes.yaml > "$TMP_DIR/legacy-routes.yaml"
+yq eval '.' "$TMP_DIR/legacy-routes.yaml" >/dev/null
+! grep -q '\${' "$TMP_DIR/legacy-routes.yaml"
+! yq -e 'select(.kind == "Route" and .spec.host == "'"$GATEWAY_HOST"'")' "$TMP_DIR/legacy-routes.yaml" >/dev/null 2>&1
+[[ "$(yq -r 'select(.kind == "Route") | .metadata.labels."pricetag.io/legacy-gateway-host"' "$TMP_DIR/legacy-routes.yaml" | sort -u)" == "true" ]]
+grep -q 'RETIRE_LEGACY_GATEWAY_HOSTS' deploy/openshift/deploy.sh
+grep -q 'oc diff -f' deploy/openshift/deploy.sh
+
 yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-router-praxis") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 8081)' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-cnpg-operator") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 8000)' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+# Prometheus in enmaas-monitoring must be able to scrape; losing this rule
+# blanked every dashboard when default-deny first shipped.
+for port in 9901 9090 8080 9187; do
+  yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-monitoring-scrape") | select(.spec.ingress[].from[].namespaceSelector.matchLabels."kubernetes.io/metadata.name" == "enmaas-monitoring") | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == '"$port"')' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+done
 
 for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
   yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \

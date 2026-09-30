@@ -36,7 +36,8 @@ evidence supporting it.
 | Immutable Praxis provenance | **PASS** | ET source `c74dc146`; deployed image digest is recorded in the deployment evidence. |
 | PR regression validation | **PASS** | Fast non-mutating workflow completes in seconds and does not access clusters or secrets. |
 | Static security baseline | **IN PROGRESS** | PR #14 is being updated for RDS egress, RDS target guards, rollup fail-safe behavior, and route-path assertions. |
-| Default-deny NetworkPolicies | **IMPLEMENTED IN PR** | EnMaaS policies include narrow TCP/5432 egress to the explicitly approved RDS CIDR; live rollout validation remains required. |
+| Default-deny NetworkPolicies | **LIVE, CORRECTED** | EnMaaS policies include narrow TCP/5432 egress to the approved RDS CIDR. The first live rollout blocked DNS, the Kubernetes API, CNPG operator status, the router→Praxis port and Prometheus scraping; every allow rule found on the cluster is now recorded in `overlays/enmaas/network-policy.yaml` and asserted by the validators. A default-deny change must ship with its allow inventory verified against the target cluster, not after. |
+| Public-host TLS in git | **IMPLEMENTED IN PR** | Every Route on `api.enmaas.devshift.net` and `dashboard.enmaas.devshift.net` references the host certificate Secret (`externalCertificate`); the router SA may read exactly those two Secrets; Secrets are never committed. Removes the dependency on a hand-created Route set holding TLS for the host. |
 | Pod security contexts | **IMPLEMENTED IN PR** | Praxis, MaaS API, and metering hardening is rendered; live rollout validation remains required. |
 | Praxis admin endpoint isolation | **IMPLEMENTED IN PR** | Admin binds to loopback and the admin Service port is removed; live probe/health validation remains required. |
 | Digest-pinned application images | **IMPLEMENTED IN PR** | EnMaaS overlay records current image digests; update procedure must be documented for every image change. |

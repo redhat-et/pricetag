@@ -129,6 +129,31 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fi
   done
 
+  # Public hosts terminate TLS with certificates held in Secrets that are never
+  # committed. Every Route on a host must reference the host certificate, and
+  # the router may read exactly those Secrets.
+  while IFS=$'\t' read -r host tls_secret; do
+    if yq -e 'select(.kind == "Route" and .spec.host == "'"$host"'") | select(.spec.tls.termination != "edge" or .spec.tls.externalCertificate.name != "'"$tls_secret"'")' \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "every Route on $host must terminate edge TLS with externalCertificate $tls_secret"
+    fi
+    if ! yq -e 'select(.kind == "Role" and .metadata.name == "router-read-'"$tls_secret"'") | .rules[] | select((.resources | join(",")) == "secrets" and (.resourceNames | join(",")) == "'"$tls_secret"'" and (.verbs | sort | join(",")) == "get,list,watch")' \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "router Role for $tls_secret must grant only get/list/watch on that Secret"
+    fi
+  done < <(printf '%s\t%s\n' "$GATEWAY_HOST" api-enmaas-tls "$DASHBOARD_HOST" dashboard-enmaas-tls)
+  if yq -e 'select(.kind == "Secret" and .type == "kubernetes.io/tls")' "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "TLS Secrets must not be rendered from the repository"
+  fi
+  grep -q 'kubernetes.io/tls' deploy/openshift/deploy.sh || fail "deployment lacks TLS secret preflight"
+
+  # The cluster is not the source of truth. Prometheus scrape access is in git
+  # so that a default-deny redeploy cannot silently remove it again.
+  if ! yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-allow-monitoring-scrape") | select(.spec.ingress[].from[].namespaceSelector.matchLabels."kubernetes.io/metadata.name" == "enmaas-monitoring")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "monitoring scrape NetworkPolicy from enmaas-monitoring is missing"
+  fi
+
   for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
     if ! yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \
       "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
