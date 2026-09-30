@@ -37,13 +37,6 @@ spec:
                   fieldPath: metadata.namespace
             - name: MONTHLY_TOKEN_QUOTA
               value: "10000000000"
-            - name: M2M_AUTH_REQUIRED
-              value: "true"
-            - name: M2M_SHARED_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: metering-internal-auth
-                  key: token
             - name: USAGE_REPORT_API_SECRET
               valueFrom:
                 secretKeyRef:
