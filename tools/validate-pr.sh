@@ -16,6 +16,7 @@ export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
 export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
 export RDS_EGRESS_CIDR=192.0.2.1/32
+export METERING_MODEL_POLICY_CHECK=true
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 
@@ -52,7 +53,7 @@ python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${METERING_MODEL_POLICY_CHECK}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
@@ -71,13 +72,15 @@ grep -qx 'ai-gateway-conversations' <<<"$routes"
 grep -qx 'ai-gateway-models' <<<"$routes"
 grep -qx 'dashboard-welcome' <<<"$routes"
 grep -qx 'dashboard-page' <<<"$routes"
+grep -qx 'dashboard-api-usage' <<<"$routes"
+grep -qx 'dashboard-api-model-policies' <<<"$routes"
 ! grep -qx 'dashboard' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
 
 dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
 while IFS= read -r path; do
   case "$path" in
-    /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin)
+    /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin|/api/v1/usage|/api/v1/model-policies)
       ;;
     *)
       echo "dashboard Route path is not an approved UI path: ${path:-<catch-all>}" >&2
@@ -85,6 +88,11 @@ while IFS= read -r path; do
       ;;
   esac
 done <<<"$dashboard_paths"
+
+for path in /api/v1/usage /api/v1/model-policies; do
+  yq -e 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'" and .spec.path == "'"$path"'") | select(.spec.tls.termination == "edge" and .spec.tls.insecureEdgeTerminationPolicy == "Redirect")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+done
 
 for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
   yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \

@@ -12,7 +12,14 @@ STORAGE_CLASS="${STORAGE_CLASS:-ibmc-vpc-block-10iops-tier}"
 ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
+if [[ "$PROFILE" == enmaas ]]; then
+  METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-true}"
+else
+  METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
+fi
+export METERING_MODEL_POLICY_CHECK
 METERING_INTERNAL_AUTH_CHANGED=false
+METERING_PARTNER_API_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 
@@ -279,6 +286,21 @@ if [[ "$PROFILE" == enmaas ]] && \
   METERING_INTERNAL_AUTH_CHANGED=true
 fi
 
+# External usage-report and user-model-policy APIs each require their own
+# bearer credential. Preserve existing credentials on reruns; rotate only when
+# explicitly requested. Values may be supplied by a secret manager, otherwise
+# generate high-entropy tokens without printing them to the console.
+if [[ "$PROFILE" == enmaas ]] && \
+   (! secret_exists metering-partner-api || [[ "${ROTATE_METERING_PARTNER_API_SECRETS:-false}" == true ]]); then
+  USAGE_REPORT_API_SECRET="${USAGE_REPORT_API_SECRET:-$(openssl rand -hex 32)}"
+  MODEL_POLICY_API_SECRET="${MODEL_POLICY_API_SECRET:-$(openssl rand -hex 32)}"
+  oc -n "$NAMESPACE" create secret generic metering-partner-api \
+    --from-literal=usage-report="$USAGE_REPORT_API_SECRET" \
+    --from-literal=model-policy="$MODEL_POLICY_API_SECRET" \
+    --dry-run=client -o yaml | oc -n "$NAMESPACE" apply -f -
+  METERING_PARTNER_API_CHANGED=true
+fi
+
 # Cluster-scoped CRDs and the pinned CNPG operator are apply-safe. The operator
 # is installed once per cluster; the namespaced Cluster is safe to reconcile.
 for crd in "$SCRIPT_DIR"/crds/*.yaml; do
@@ -362,7 +384,7 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${METERING_MODEL_POLICY_CHECK}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical
@@ -377,6 +399,9 @@ oc -n "$NAMESPACE" set env deployment/metering-service \
 if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/metering-service deployment/praxis
 fi
+if [[ "$PROFILE" == enmaas && "$METERING_PARTNER_API_CHANGED" == true ]]; then
+  oc -n "$NAMESPACE" rollout restart deployment/metering-service
+fi
 
 oc -n "$NAMESPACE" rollout status deployment/maas-api --timeout=180s
 oc -n "$NAMESPACE" rollout status deployment/metering-service --timeout=180s
@@ -386,7 +411,8 @@ oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 # Route status keeps conditions under status.ingress, so oc wait's generic
 # condition handler is not reliable here.
 required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
-  ai-gateway-conversations ai-gateway-models)
+  ai-gateway-conversations ai-gateway-models dashboard-api-usage \
+  dashboard-api-model-policies)
 for route in "${required_routes[@]}"; do
   admitted=false
   for _ in {1..120}; do
