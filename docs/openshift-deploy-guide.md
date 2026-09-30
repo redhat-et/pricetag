@@ -242,6 +242,8 @@ Secrets from these values; it never writes them to a manifest:
 
 ```bash
 export DATABASE_BACKEND=rds
+export RDS_EXPECTED_HOST='<approved-rds-endpoint>'
+export RDS_EGRESS_CIDR='<rds-subnet-cidr-or-endpoint-/32>'
 export RDS_DATABASE_URL='postgresql://aigateway:<password>@<rds-host>:5432/aigateway?sslmode=require'
 export RDS_READ_DATABASE_URL='postgresql://metering_reader:<password>@<rds-host>:5432/aigateway?sslmode=require'
 ./deploy/openshift/deploy.sh
@@ -250,6 +252,11 @@ export RDS_READ_DATABASE_URL='postgresql://metering_reader:<password>@<rds-host>
 `DATABASE_BACKEND=cnpg` remains the default and keeps the existing CloudNativePG
 path. RDS mode preserves the CNPG resources for rollback but does not point
 applications at `aigateway-pg-rw` or create the CNPG read-replica grant.
+RDS mode is restricted to the `enmaas` profile. The two URLs and any optional
+MaaS/metering overrides must match `RDS_EXPECTED_HOST`, use PostgreSQL TLS, and
+use port 5432. `RDS_EGRESS_CIDR` is rendered into narrow TCP/5432 NetworkPolicies
+for the MaaS API and metering pods; use the RDS subnet CIDR when failover can
+change the endpoint address, rather than a broad network range.
 
 Run this from the repository containing the mirrored EnMaaS image tags. The script
 creates the namespace, CRDs, CNPG operator, database, applications, and Routes in that

@@ -140,6 +140,42 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: enmaas-allow-maas-api-rds-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: maas-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${RDS_EGRESS_CIDR}
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-metering-rds-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: metering-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${RDS_EGRESS_CIDR}
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: enmaas-allow-postgres-https-egress
 spec:
   podSelector:

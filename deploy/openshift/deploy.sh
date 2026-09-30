@@ -49,6 +49,61 @@ case "$DATABASE_BACKEND" in
   cnpg|rds) ;;
   *) die "DATABASE_BACKEND must be cnpg or rds" ;;
 esac
+RDS_EGRESS_CIDR="${RDS_EGRESS_CIDR:-192.0.2.1/32}"
+
+validate_rds_url() {
+  local variable_name="$1"
+  local url_value="$2"
+  RDS_URL="$url_value" RDS_EXPECTED_HOST="$RDS_EXPECTED_HOST" \
+    RDS_URL_NAME="$variable_name" python3 - <<'PY'
+import os
+import sys
+from urllib.parse import parse_qs, urlsplit
+
+name = os.environ["RDS_URL_NAME"]
+value = os.environ["RDS_URL"]
+expected = os.environ["RDS_EXPECTED_HOST"].rstrip(".").lower()
+try:
+    parsed = urlsplit(value)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    port = parsed.port
+except ValueError as exc:
+    print(f"ERROR: {name} is not a valid PostgreSQL URL: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if parsed.scheme not in {"postgres", "postgresql"}:
+    print(f"ERROR: {name} must use the PostgreSQL URL scheme", file=sys.stderr)
+    raise SystemExit(1)
+if host != expected:
+    print(f"ERROR: {name} host does not match RDS_EXPECTED_HOST", file=sys.stderr)
+    raise SystemExit(1)
+if port not in {None, 5432}:
+    print(f"ERROR: {name} must use PostgreSQL port 5432", file=sys.stderr)
+    raise SystemExit(1)
+sslmode = parse_qs(parsed.query).get("sslmode", [""])[-1]
+if sslmode not in {"require", "verify-ca", "verify-full"}:
+    print(f"ERROR: {name} must require TLS with sslmode=require, verify-ca, or verify-full", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+validate_rds_cidr() {
+  RDS_EGRESS_CIDR="$RDS_EGRESS_CIDR" python3 - <<'PY'
+import ipaddress
+import os
+import sys
+
+value = os.environ["RDS_EGRESS_CIDR"]
+try:
+    network = ipaddress.ip_network(value, strict=False)
+except ValueError as exc:
+    print(f"ERROR: RDS_EGRESS_CIDR is not a valid CIDR: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+if network.prefixlen == 0:
+    print("ERROR: RDS_EGRESS_CIDR must not be a default route", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
 
 ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
@@ -91,10 +146,19 @@ fi
 # never enter a tracked manifest. The CNPG password is still maintained so a
 # retained CNPG cluster remains a rollback target.
 if [[ "$DATABASE_BACKEND" == rds ]]; then
+  [[ "$PROFILE" == enmaas ]] || die "DATABASE_BACKEND=rds is only supported for PROFILE=enmaas"
   : "${RDS_DATABASE_URL:?Set RDS_DATABASE_URL when DATABASE_BACKEND=rds}"
   : "${RDS_READ_DATABASE_URL:?Set RDS_READ_DATABASE_URL when DATABASE_BACKEND=rds}"
+  : "${RDS_EXPECTED_HOST:?Set RDS_EXPECTED_HOST to the approved EnMaaS RDS hostname}"
+  [[ "$RDS_EXPECTED_HOST" != */* && "$RDS_EXPECTED_HOST" != *:* ]] || \
+    die "RDS_EXPECTED_HOST must be a hostname, not a URL or path"
+  validate_rds_cidr
+  validate_rds_url RDS_DATABASE_URL "$RDS_DATABASE_URL"
+  validate_rds_url RDS_READ_DATABASE_URL "$RDS_READ_DATABASE_URL"
   MAAS_DATABASE_URL="${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
   METERING_DATABASE_URL="${RDS_METERING_DATABASE_URL:-$RDS_DATABASE_URL}"
+  validate_rds_url RDS_MAAS_DATABASE_URL "$MAAS_DATABASE_URL"
+  validate_rds_url RDS_METERING_DATABASE_URL "$METERING_DATABASE_URL"
 else
   MAAS_DATABASE_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable"
   METERING_DATABASE_URL="$MAAS_DATABASE_URL"
@@ -215,7 +279,7 @@ oc apply --server-side --force-conflicts \
   -f "$SCRIPT_DIR/database/cnpg/cnpg-operator-1.30.0.yaml"
 oc -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
 
-export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT COS_REGION
+export NAMESPACE STORAGE_CLASS COS_BUCKET COS_ENDPOINT COS_REGION RDS_EGRESS_CIDR
 CNPG_CLUSTER_MANIFEST="$SCRIPT_DIR/database/cnpg/10-cluster.yaml"
 CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION}"
 if [[ "$PROFILE" == enmaas ]]; then
@@ -286,7 +350,7 @@ if [[ "$PROFILE" == enmaas ]]; then
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
-envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST}" \
+envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_TAG} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR}" \
   < "$RENDER_DIR/manifests.yaml" | oc apply -f -
 
 # The dashboard Route receives its host from OpenShift. Pass that canonical

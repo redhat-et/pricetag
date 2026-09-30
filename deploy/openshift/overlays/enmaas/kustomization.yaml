@@ -151,7 +151,9 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: DASHBOARD_USE_ROLLUPS
-          value: "true"
+          # Keep rollup reads fail-safe until the pinned metering image clears
+          # maintenance errors and freshness state correctly.
+          value: "false"
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:

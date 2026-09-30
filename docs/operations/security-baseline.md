@@ -35,13 +35,13 @@ evidence supporting it.
 | Vertex service-account secret delivery | **PASS** | Key is mounted from the `vertex-sa-key` OpenShift Secret; it is not in images or repositories. |
 | Immutable Praxis provenance | **PASS** | ET source `c74dc146`; deployed image digest is recorded in the deployment evidence. |
 | PR regression validation | **PASS** | Fast non-mutating workflow completes in seconds and does not access clusters or secrets. |
-| Static security baseline | **IN PROGRESS** | PR #14 intentionally fails until all baseline findings are remediated. |
-| Default-deny NetworkPolicies | **IMPLEMENTED IN PR** | EnMaaS policies are rendered and require live rollout validation before merge. |
+| Static security baseline | **IN PROGRESS** | PR #14 is being updated for RDS egress, RDS target guards, rollup fail-safe behavior, and route-path assertions. |
+| Default-deny NetworkPolicies | **IMPLEMENTED IN PR** | EnMaaS policies include narrow TCP/5432 egress to the explicitly approved RDS CIDR; live rollout validation remains required. |
 | Pod security contexts | **IMPLEMENTED IN PR** | Praxis, MaaS API, and metering hardening is rendered; live rollout validation remains required. |
 | Praxis admin endpoint isolation | **IMPLEMENTED IN PR** | Admin binds to loopback and the admin Service port is removed; live probe/health validation remains required. |
 | Digest-pinned application images | **IMPLEMENTED IN PR** | EnMaaS overlay records current image digests; update procedure must be documented for every image change. |
-| Public quota endpoint boundary | **FAIL / OPEN** | `/api/v1/customers/{username}` was reachable without authentication through the public dashboard Route. Requires a private/authenticated internal boundary. |
-| Usage-event ingestion boundary | **FAIL / OPEN** | `/api/v1/events` is registered without session auth. A mutating public probe has not been sent; source and route exposure require remediation. |
+| Public quota endpoint boundary | **IMPLEMENTED IN PR** | Dashboard route-path assertions exclude `/api/v1/customers/...`; live unauthenticated and internal authenticated probes remain required. |
+| Usage-event ingestion boundary | **IMPLEMENTED IN PR** | Dashboard route-path assertions exclude `/api/v1/events`; live unauthenticated and internal authenticated probes remain required. |
 | Budget Tool machine authentication | **OPEN** | Dedicated private service identity and scoped quota API are not yet implemented. |
 | Atlas key-minting boundary | **OPEN** | Key minting exists behind dashboard authorization; a private service-to-service contract is still required. |
 | CSRF protection | **OPEN** | Session cookies are Secure, HttpOnly, and SameSite, but explicit CSRF protection for state-changing APIs requires review. |

@@ -15,6 +15,7 @@ export METERING_IMAGE_DIGEST=sha256:00000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
 export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
+export RDS_EGRESS_CIDR=192.0.2.1/32
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 
@@ -51,7 +52,7 @@ python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
@@ -72,6 +73,24 @@ grep -qx 'dashboard-welcome' <<<"$routes"
 grep -qx 'dashboard-page' <<<"$routes"
 ! grep -qx 'dashboard' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
+
+dashboard_paths="$(yq -r 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | (.spec.path // "")' "$TMP_DIR/enmaas-rendered.yaml")"
+while IFS= read -r path; do
+  case "$path" in
+    ""|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
+      echo "dashboard Route exposes a forbidden path: ${path:-<catch-all>}" >&2
+      exit 1
+      ;;
+  esac
+done <<<"$dashboard_paths"
+
+for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
+  yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+done
+
+yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 
 echo "== EnMaaS Vertex contract =="
 grep -q 'model_to_provider' "$TMP_DIR/praxis.yaml"

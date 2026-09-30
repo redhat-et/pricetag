@@ -14,8 +14,10 @@ export VERTEX_IMAGE_TAG=practice-ci
 export METERING_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 export GATEWAY_HOST=ai-gateway-enmaas.apps.ci.example.com
 export GATEWAY_URL=https://$GATEWAY_HOST
+export DASHBOARD_HOST=dashboard-enmaas.apps.ci.example.com
 export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
+export RDS_EGRESS_CIDR=192.0.2.1/32
 
 cd "$ROOT_DIR"
 failures=()
@@ -42,7 +44,7 @@ else
       >"$TMP_DIR/enmaas-vertex.yaml"; then
     fail "EnMaaS Vertex fragment rendering failed"
   else
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST}' \
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_TAG} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
       <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
     yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
       "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml" || fail "Praxis ConfigMap data is missing"
@@ -92,9 +94,25 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fi
   done < <(yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].image' "$TMP_DIR/enmaas-rendered.yaml")
 
-  route_names="$(yq -r 'select(.kind == "Route") | .metadata.name' "$TMP_DIR/enmaas-rendered.yaml" | sort)"
-  if grep -qx 'dashboard' <<<"$route_names"; then
-    fail "public dashboard Route exposes metering-service APIs; internal API paths need an authenticated/private boundary"
+  dashboard_paths="$(yq -r 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | (.spec.path // "")' "$TMP_DIR/enmaas-rendered.yaml")"
+  while IFS= read -r path; do
+    case "$path" in
+      ""|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
+        fail "dashboard Route exposes a forbidden path: ${path:-<catch-all>}"
+        ;;
+    esac
+  done <<<"$dashboard_paths"
+
+  for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress; do
+    if ! yq -e "select(.kind == \"NetworkPolicy\" and .metadata.name == \"$policy\") | .spec.egress[] | select(.to[]?.ipBlock.cidr == \"$RDS_EGRESS_CIDR\") | .ports[] | select(.protocol == \"TCP\" and .port == 5432)" \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "$policy does not allow the configured RDS CIDR on TCP/5432"
+    fi
+  done
+
+  if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "metering-service must keep DASHBOARD_USE_ROLLUPS=false until the freshness fail-safe is fixed"
   fi
 fi
 
@@ -102,6 +120,8 @@ echo "== deployment guard baseline =="
 grep -q 'PRICETAG_KUBECONFIG' deploy/openshift/deploy.sh || fail "deployment lacks dedicated kubeconfig guard"
 grep -q 'EXPECTED_OC_SERVER' deploy/openshift/deploy.sh || fail "deployment lacks expected-server guard"
 grep -q 'PROTECTED_OC_SERVER' deploy/openshift/deploy.sh || fail "deployment lacks protected-server guard"
+grep -q 'RDS_EXPECTED_HOST' deploy/openshift/deploy.sh || fail "deployment lacks RDS host guard"
+grep -q 'RDS_EGRESS_CIDR' deploy/openshift/deploy.sh || fail "deployment lacks RDS egress configuration"
 grep -q 'CONFIRM_DEPLOYMENT' deploy/openshift/deploy.sh || fail "deployment lacks explicit confirmation guard"
 
 echo
