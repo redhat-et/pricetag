@@ -77,8 +77,10 @@ grep -qx 'dashboard-page' <<<"$routes"
 dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
 while IFS= read -r path; do
   case "$path" in
-    ""|null|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
-      echo "dashboard Route exposes a forbidden path: ${path:-<catch-all>}" >&2
+    /welcome|/login|/logout|/health|/ready|/dashboard|/manager|/admin|/routing|/me|/invite|/whoami|/api/v1/whoami|/api/v1/pricing|/api/v1/dashboard|/api/v1/org|/api/v1/me|/api/v1/admin)
+      ;;
+    *)
+      echo "dashboard Route path is not an approved UI path: ${path:-<catch-all>}" >&2
       exit 1
       ;;
   esac
