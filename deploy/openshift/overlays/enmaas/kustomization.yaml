@@ -123,6 +123,12 @@ patches:
         ports:
           - port: 8082
             $patch: delete
+          # Prometheus in enmaas-monitoring scrapes praxis.enmaas.svc:9901.
+          # Reachable only when PRAXIS_PUBLIC_ADMIN=true; ingress to 9901 is
+          # restricted by NetworkPolicy to the monitoring namespaces.
+          - name: metrics
+            port: 9901
+            targetPort: 9901
   - target:
       group: apps
       version: v1

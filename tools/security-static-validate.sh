@@ -62,7 +62,34 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
   [[ "$network_policy_count" -gt 0 ]] || fail "EnMaaS has no NetworkPolicy resources"
 
   if grep -q 'allow_public_admin: true' "$TMP_DIR/praxis.yaml"; then
-    fail "Praxis enables insecure_options.allow_public_admin"
+    fail "Praxis enables insecure_options.allow_public_admin by default"
+  fi
+  # PRAXIS_PUBLIC_ADMIN=true is an accepted exception only with its compensating
+  # control: ingress to 9901 limited to the monitoring namespaces under
+  # default-deny. The opt-in render must not change anything else in the config.
+  if PRAXIS_PUBLIC_ADMIN=true python3 deploy/openshift/render-enmaas-vertex.py \
+      "$TMP_DIR/enmaas-kustomized.yaml" deploy/openshift/overlays/enmaas/vertex-fragments \
+      | envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
+      | yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
+      >"$TMP_DIR/praxis-public-admin.yaml" 2>/dev/null; then
+    if ! diff <(yq -r 'del(.admin, .insecure_options)' "$TMP_DIR/praxis.yaml") \
+              <(yq -r 'del(.admin, .insecure_options)' "$TMP_DIR/praxis-public-admin.yaml") >/dev/null; then
+      fail "PRAXIS_PUBLIC_ADMIN must only change the admin bind and its flag"
+    fi
+    yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "enmaas-default-deny")' \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1 || fail "public admin requires enmaas-default-deny"
+    for policy in enmaas-allow-monitoring-praxis enmaas-allow-monitoring-scrape; do
+      if ! yq -e 'select(.kind == "NetworkPolicy" and .metadata.name == "'"$policy"'") | select(([.spec.ingress[].from[].namespaceSelector.matchLabels."kubernetes.io/metadata.name" | test("monitoring$")] | all)) | .spec.ingress[].ports[] | select(.protocol == "TCP" and .port == 9901)' \
+        "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+        fail "public admin requires $policy to limit 9901 ingress to monitoring namespaces"
+      fi
+    done
+    if yq -e 'select(.kind == "Route") | select(.spec.port.targetPort == 9901 or .spec.port.targetPort == "metrics")' \
+      "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+      fail "the Praxis admin port must never be exposed through a Route"
+    fi
+  else
+    fail "opt-in Praxis public-admin render failed"
   fi
   grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml" || \
     fail "Praxis metering calls have no internal authentication file configured"
@@ -87,9 +114,12 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fi
   done
 
-  if yq -e 'select(.kind == "Service" and .metadata.name == "praxis") | .spec.ports[] | select(.port == 9901)' \
+  # The admin port may appear on the Service only as the named metrics port
+  # for Prometheus; reachability is governed by the 9901 NetworkPolicies checked
+  # above, and the port must never be exposed through a Route.
+  if yq -e 'select(.kind == "Service" and .metadata.name == "praxis") | .spec.ports[] | select(.port == 9901 and .name != "metrics")' \
       "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
-    fail "Praxis admin port 9901 is exposed by the Service"
+    fail "Praxis admin port 9901 is exposed by the Service other than as the metrics port"
   fi
 
   while IFS= read -r image; do

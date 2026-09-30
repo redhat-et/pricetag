@@ -17,6 +17,11 @@ export METERING_MODEL_POLICY_CHECK
 # The former router-generated gateway host keeps serving next to the canonical
 # host until this is set to true; retiring it is an announced user-facing change.
 RETIRE_LEGACY_GATEWAY_HOSTS="${RETIRE_LEGACY_GATEWAY_HOSTS:-false}"
+# Bind the Praxis admin listener (/metrics, /ready, /healthy) on the pod network
+# so Prometheus can scrape it. Ingress to 9901 is limited by NetworkPolicy to the
+# monitoring namespaces; the static baseline refuses the flag without that rule.
+PRAXIS_PUBLIC_ADMIN="${PRAXIS_PUBLIC_ADMIN:-false}"
+export PRAXIS_PUBLIC_ADMIN
 METERING_INTERNAL_AUTH_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
@@ -31,6 +36,8 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$METERING_MODEL_POLICY_CHECK" == true || "$METERING_MODEL_POLICY_CHECK" == false ]] || \
   die "METERING_MODEL_POLICY_CHECK must be true or false"
+[[ "$PRAXIS_PUBLIC_ADMIN" == true || "$PRAXIS_PUBLIC_ADMIN" == false ]] || \
+  die "PRAXIS_PUBLIC_ADMIN must be true or false"
 
 [[ -f "$PRICETAG_KUBECONFIG" ]] || die "PRICETAG_KUBECONFIG does not point to a file"
 

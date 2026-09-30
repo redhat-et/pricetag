@@ -76,6 +76,22 @@ if grep -q 'model_policy_check:' "$TMP_DIR/praxis-without-model-policy.yaml"; th
   echo "disabled model-policy config must be omitted for old Praxis binaries" >&2
   exit 1
 fi
+# Default render keeps the admin listener on loopback; the opt-in render binds
+# it on the pod network together with the flag Praxis requires for that.
+grep -q 'address: "127.0.0.1:9901"' "$TMP_DIR/praxis.yaml"
+! grep -q 'allow_public_admin' "$TMP_DIR/praxis.yaml"
+PRAXIS_PUBLIC_ADMIN=true python3 deploy/openshift/render-enmaas-vertex.py \
+  "$TMP_DIR/enmaas-kustomized.yaml" \
+  deploy/openshift/overlays/enmaas/vertex-fragments \
+  | yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
+  >"$TMP_DIR/praxis-public-admin.yaml"
+yq eval '.' "$TMP_DIR/praxis-public-admin.yaml" >/dev/null
+[[ "$(yq -r '.admin.address' "$TMP_DIR/praxis-public-admin.yaml")" == "0.0.0.0:9901" ]]
+[[ "$(yq -r '.insecure_options.allow_public_admin' "$TMP_DIR/praxis-public-admin.yaml")" == "true" ]]
+[[ "$(yq -r '.insecure_options | length' "$TMP_DIR/praxis-public-admin.yaml")" == "1" ]]
+yq -e 'select(.kind == "Service" and .metadata.name == "praxis") | .spec.ports[] | select(.name == "metrics" and .port == 9901)' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+grep -q 'PRAXIS_PUBLIC_ADMIN' deploy/openshift/deploy.sh
 if grep -nE '\$\{[A-Z_][A-Z0-9_]*\}' "$TMP_DIR/enmaas-rendered.yaml"; then
   echo "unresolved manifest variables remain" >&2
   exit 1

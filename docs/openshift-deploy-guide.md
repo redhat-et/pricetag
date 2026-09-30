@@ -264,6 +264,17 @@ Route is admitted. Retiring the host is a user-facing change; announce it first.
 Before the main apply, `deploy.sh` prints `oc diff` of the rendered manifests so
 the operator sees every object the run is about to change.
 
+#### Praxis metrics
+
+Praxis serves `/metrics`, `/ready` and `/healthy` on its admin listener and, by
+default, binds it to loopback, which Prometheus cannot reach. Set
+`PRAXIS_PUBLIC_ADMIN=true` for the EnMaaS profile to bind `0.0.0.0:9901` with
+`insecure_options.allow_public_admin: true`; the Service then exposes the
+`metrics` port for `praxis.<namespace>.svc:9901`. Ingress to 9901 is restricted
+by NetworkPolicy to the monitoring namespaces, and
+`tools/security-static-validate.sh` refuses the opt-in render without that rule.
+Changing the flag changes `praxis-config`, so the deploy rolls Praxis.
+
 For an externally managed PostgreSQL target such as RDS, set the backend mode
 and provide complete TLS-enabled connection URLs from the secure operations
 environment. The deploy script derives the MaaS, metering, and dashboard read
