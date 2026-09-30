@@ -9,6 +9,21 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 # Most checks are bare yq/grep tests; name the failing one instead of exiting silently.
 trap 'echo "validate-pr: check failed at ${BASH_SOURCE[0]}:${LINENO}: ${BASH_COMMAND}" >&2' ERR
+# Neither `! cmd` (exempt from errexit in every bash) nor a false `[[ ]]`
+# (ignored by macOS bash 3.2) reliably stops the script. Negative and equality
+# checks go through these helpers so a failure is loud on every platform.
+refute() {
+  if "$@" >/dev/null 2>&1; then
+    echo "validate-pr: expected failure but succeeded: $*" >&2
+    exit 1
+  fi
+}
+assert_eq() {
+  if [[ "$1" != "$2" ]]; then
+    echo "validate-pr: $3: expected '$2', got '$1'" >&2
+    exit 1
+  fi
+}
 
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
@@ -81,16 +96,16 @@ fi
 # Default render keeps the admin listener on loopback; the opt-in render binds
 # it on the pod network together with the flag Praxis requires for that.
 grep -q 'address: "127.0.0.1:9901"' "$TMP_DIR/praxis.yaml"
-! grep -q 'allow_public_admin' "$TMP_DIR/praxis.yaml"
+refute grep -q 'allow_public_admin' "$TMP_DIR/praxis.yaml"
 PRAXIS_PUBLIC_ADMIN=true python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   | yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   >"$TMP_DIR/praxis-public-admin.yaml"
 yq eval '.' "$TMP_DIR/praxis-public-admin.yaml" >/dev/null
-[[ "$(yq -r '.admin.address' "$TMP_DIR/praxis-public-admin.yaml")" == "0.0.0.0:9901" ]]
-[[ "$(yq -r '.insecure_options.allow_public_admin' "$TMP_DIR/praxis-public-admin.yaml")" == "true" ]]
-[[ "$(yq -r '.insecure_options | length' "$TMP_DIR/praxis-public-admin.yaml")" == "1" ]]
+assert_eq "$(yq -r '.admin.address' "$TMP_DIR/praxis-public-admin.yaml")" "0.0.0.0:9901" "public-admin bind"
+assert_eq "$(yq -r '.insecure_options.allow_public_admin' "$TMP_DIR/praxis-public-admin.yaml")" "true" "allow_public_admin flag"
+assert_eq "$(yq -r '.insecure_options | length' "$TMP_DIR/praxis-public-admin.yaml")" "1" "only one insecure option set"
 yq -e 'select(.kind == "Service" and .metadata.name == "praxis") | .spec.ports[] | select(.name == "metrics" and .port == 9901)' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 grep -q 'PRAXIS_PUBLIC_ADMIN' deploy/openshift/deploy.sh
@@ -112,8 +127,11 @@ grep -qx 'dashboard-api-usage' <<<"$routes"
 grep -qx 'dashboard-api-model-policies' <<<"$routes"
 grep -qx 'dashboard-api-users' <<<"$routes"
 grep -qx 'dashboard-api-models' <<<"$routes"
-! grep -qx 'dashboard' <<<"$routes"
-! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
+refute grep -qx 'dashboard' <<<"$routes"
+# The benchmark model is dogfood-only: no llm-katan workload may render for
+# EnMaaS. The Praxis benchmark pipeline may still name the cluster; that dead
+# listener is separate from deploying an llm-katan workload.
+refute yq -e 'select((.kind == "Deployment" or .kind == "Service" or .kind == "Route") and .metadata.name == "llm-katan")' "$TMP_DIR/enmaas-rendered.yaml"
 
 dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
 while IFS= read -r path; do
@@ -150,16 +168,17 @@ for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
   yq -e 'select(.kind == "RoleBinding" and .metadata.name == "router-read-'"$tls_secret"'") | .subjects[] | select(.kind == "ServiceAccount" and .name == "router" and .namespace == "openshift-ingress")' \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 done
-! grep -qE 'kind: Secret' deploy/openshift/overlays/enmaas/*.yaml
+refute grep -qE 'kind: Secret' deploy/openshift/overlays/enmaas/*.yaml
 
 # Compatibility Routes for the legacy gateway host render standalone and never
 # touch the canonical host.
 LEGACY_GATEWAY_HOST=ai-gateway-enmaas.apps.example.test envsubst '${NAMESPACE} ${LEGACY_GATEWAY_HOST}' \
   < deploy/openshift/overlays/enmaas/legacy-gateway-routes.yaml > "$TMP_DIR/legacy-routes.yaml"
 yq eval '.' "$TMP_DIR/legacy-routes.yaml" >/dev/null
-! grep -q '\${' "$TMP_DIR/legacy-routes.yaml"
-! yq -e 'select(.kind == "Route" and .spec.host == "'"$GATEWAY_HOST"'")' "$TMP_DIR/legacy-routes.yaml" >/dev/null 2>&1
-[[ "$(yq -r 'select(.kind == "Route") | .metadata.labels."pricetag.io/legacy-gateway-host"' "$TMP_DIR/legacy-routes.yaml" | sort -u)" == "true" ]]
+refute grep -q '\${' "$TMP_DIR/legacy-routes.yaml"
+refute yq -e 'select(.kind == "Route" and .spec.host == "'"$GATEWAY_HOST"'")' "$TMP_DIR/legacy-routes.yaml"
+assert_eq "$(yq -r -N 'select(.kind == "Route") | .metadata.labels."pricetag.io/legacy-gateway-host"' "$TMP_DIR/legacy-routes.yaml" | sort -u)" "true" "legacy Routes carry the retirement label"
+assert_eq "$(yq -r -N 'select(.kind == "Route") | .spec.host' "$TMP_DIR/legacy-routes.yaml" | sort -u)" "ai-gateway-enmaas.apps.example.test" "legacy Routes use only the legacy host"
 grep -q 'RETIRE_LEGACY_GATEWAY_HOSTS' deploy/openshift/deploy.sh
 grep -q 'oc diff -f' deploy/openshift/deploy.sh
 
