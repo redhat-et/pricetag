@@ -11,7 +11,10 @@ spec:
   path: /welcome
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -23,7 +26,10 @@ spec:
   path: /login
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -35,7 +41,10 @@ spec:
   path: /logout
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -47,7 +56,10 @@ spec:
   path: /health
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -59,7 +71,10 @@ spec:
   path: /ready
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -71,7 +86,10 @@ spec:
   path: /dashboard
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -83,7 +101,10 @@ spec:
   path: /manager
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -95,7 +116,10 @@ spec:
   path: /admin
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -107,7 +131,10 @@ spec:
   path: /routing
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -119,7 +146,10 @@ spec:
   path: /me
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -131,7 +161,10 @@ spec:
   path: /invite
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -143,7 +176,10 @@ spec:
   path: /whoami
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -155,7 +191,10 @@ spec:
   path: /api/v1/whoami
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -167,7 +206,10 @@ spec:
   path: /api/v1/pricing
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -179,7 +221,10 @@ spec:
   path: /api/v1/dashboard
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -191,7 +236,10 @@ spec:
   path: /api/v1/org
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -203,7 +251,10 @@ spec:
   path: /api/v1/me
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -215,7 +266,10 @@ spec:
   path: /api/v1/admin
   to: { kind: Service, name: metering-service }
   port: { targetPort: 8080 }
-  tls: { termination: edge }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 # Partner API paths are path-scoped to avoid exposing the metering service's
 # entire listener. The handlers require their endpoint-specific bearer tokens.
@@ -232,6 +286,7 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -246,3 +301,4 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+    externalCertificate: { name: dashboard-enmaas-tls }

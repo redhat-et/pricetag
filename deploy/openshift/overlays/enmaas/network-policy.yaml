@@ -187,3 +187,55 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+---
+# The EnMaaS Prometheus stack lives in the `enmaas-monitoring` namespace
+# (deployments/enmaas/monitoring in redhat-et/open-models), NOT in
+# openshift-monitoring - so enmaas-allow-monitoring-praxis above does not
+# cover it. Without this rule the default-deny policy silently blackholes
+# every scrape of this namespace (praxis, maas-api, rds-postgres-exporter
+# all went down on 2026-09-30 when default-deny landed).
+# Ports: 9187 postgres exporters, 9901 praxis admin/metrics,
+#        9090 maas-api metrics, 8080 metering-service (future).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-monitoring-scrape
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: enmaas-monitoring
+      ports:
+        - protocol: TCP
+          port: 9187
+        - protocol: TCP
+          port: 9901
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 8080
+---
+# postgres_exporter for the RDS metering DB (Deployment lives in
+# redhat-et/open-models deployments/enmaas/monitoring/09-rds-exporter.yaml,
+# runs in this namespace so annotation-driven scrape discovery finds it).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: enmaas-allow-rds-exporter-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rds-postgres-exporter
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${RDS_EGRESS_CIDR}
+      ports:
+        - protocol: TCP
+          port: 5432

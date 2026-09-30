@@ -5,6 +5,7 @@ namespace: enmaas
 
 resources:
   - namespace.yaml
+  - tls.yaml
   - maas-api-rbac-binding.yaml
   - network-policy.yaml
   - dashboard-routes.yaml
@@ -22,6 +23,21 @@ images:
     digest: ${VERTEX_IMAGE_DIGEST}
 
 patches:
+  - target:
+      group: route.openshift.io
+      version: v1
+      kind: Route
+      name: "ai-gateway.*"
+    patch: |-
+      # Public devshift.net hostname needs the cert-manager-issued cert
+      # (the cluster wildcard only covers *.apps.rosa...). See tls.yaml.
+      - op: add
+        path: /spec/tls/externalCertificate
+        value:
+          name: api-enmaas-tls
+      - op: add
+        path: /spec/tls/insecureEdgeTerminationPolicy
+        value: Redirect
   - target:
       group: route.openshift.io
       version: v1

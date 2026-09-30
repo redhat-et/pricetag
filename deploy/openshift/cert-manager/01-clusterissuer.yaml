@@ -1,0 +1,17 @@
+---
+# ACME issuer for public EnMaaS hostnames. HTTP-01 through the public router;
+# see README.md for why DNS-01 is not available for devshift.net.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: bturner@redhat.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: openshift-default
