@@ -112,6 +112,22 @@ if sslmode not in {"require", "verify-ca", "verify-full"}:
 PY
 }
 
+# Validate the external database target before any namespace or application
+# Secret is reconciled. This guard protects against sending an EnMaaS deploy to
+# an unintended database even when the OpenShift target itself is correct.
+if [[ "$DATABASE_BACKEND" == rds ]]; then
+  [[ "$PROFILE" == enmaas ]] || die "DATABASE_BACKEND=rds is only supported for PROFILE=enmaas"
+  : "${RDS_DATABASE_URL:?Set RDS_DATABASE_URL when DATABASE_BACKEND=rds}"
+  : "${RDS_READ_DATABASE_URL:?Set RDS_READ_DATABASE_URL when DATABASE_BACKEND=rds}"
+  : "${RDS_EXPECTED_HOST:?Set RDS_EXPECTED_HOST to the approved EnMaaS RDS hostname}"
+  [[ "$RDS_EXPECTED_HOST" != */* && "$RDS_EXPECTED_HOST" != *:* ]] || \
+    die "RDS_EXPECTED_HOST must be a hostname, not a URL or path"
+  validate_rds_url RDS_DATABASE_URL "$RDS_DATABASE_URL"
+  validate_rds_url RDS_READ_DATABASE_URL "$RDS_READ_DATABASE_URL"
+  validate_rds_url RDS_MAAS_DATABASE_URL "${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
+  validate_rds_url RDS_METERING_DATABASE_URL "${RDS_METERING_DATABASE_URL:-$RDS_DATABASE_URL}"
+fi
+
 ROUTE_DOMAIN="$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
 [[ -n "$ROUTE_DOMAIN" ]] || die "could not determine the OpenShift route domain"
 GATEWAY_HOST="${GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMAIN}}"
@@ -153,18 +169,8 @@ fi
 # never enter a tracked manifest. The CNPG password is still maintained so a
 # retained CNPG cluster remains a rollback target.
 if [[ "$DATABASE_BACKEND" == rds ]]; then
-  [[ "$PROFILE" == enmaas ]] || die "DATABASE_BACKEND=rds is only supported for PROFILE=enmaas"
-  : "${RDS_DATABASE_URL:?Set RDS_DATABASE_URL when DATABASE_BACKEND=rds}"
-  : "${RDS_READ_DATABASE_URL:?Set RDS_READ_DATABASE_URL when DATABASE_BACKEND=rds}"
-  : "${RDS_EXPECTED_HOST:?Set RDS_EXPECTED_HOST to the approved EnMaaS RDS hostname}"
-  [[ "$RDS_EXPECTED_HOST" != */* && "$RDS_EXPECTED_HOST" != *:* ]] || \
-    die "RDS_EXPECTED_HOST must be a hostname, not a URL or path"
-  validate_rds_url RDS_DATABASE_URL "$RDS_DATABASE_URL"
-  validate_rds_url RDS_READ_DATABASE_URL "$RDS_READ_DATABASE_URL"
   MAAS_DATABASE_URL="${RDS_MAAS_DATABASE_URL:-$RDS_DATABASE_URL}"
   METERING_DATABASE_URL="${RDS_METERING_DATABASE_URL:-$RDS_DATABASE_URL}"
-  validate_rds_url RDS_MAAS_DATABASE_URL "$MAAS_DATABASE_URL"
-  validate_rds_url RDS_METERING_DATABASE_URL "$METERING_DATABASE_URL"
 else
   MAAS_DATABASE_URL="postgresql://aigateway:${PG_PASSWORD}@aigateway-pg-rw:5432/aigateway?sslmode=disable"
   METERING_DATABASE_URL="$MAAS_DATABASE_URL"
