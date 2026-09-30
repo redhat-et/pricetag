@@ -7,6 +7,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+# Most checks are bare yq/grep tests; name the failing one instead of exiting silently.
+trap 'echo "validate-pr: check failed at ${BASH_SOURCE[0]}:${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 export NAMESPACE=enmaas
 export VERTEX_PROJECT=ci-placeholder-project
