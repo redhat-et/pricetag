@@ -94,10 +94,10 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fi
   done < <(yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].image' "$TMP_DIR/enmaas-rendered.yaml")
 
-  dashboard_paths="$(yq -r 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | (.spec.path // "")' "$TMP_DIR/enmaas-rendered.yaml")"
+  dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
   while IFS= read -r path; do
     case "$path" in
-      ""|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
+      ""|null|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
         fail "dashboard Route exposes a forbidden path: ${path:-<catch-all>}"
         ;;
     esac

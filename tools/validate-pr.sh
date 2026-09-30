@@ -74,10 +74,10 @@ grep -qx 'dashboard-page' <<<"$routes"
 ! grep -qx 'dashboard' <<<"$routes"
 ! grep -q 'llm-katan' "$TMP_DIR/enmaas-rendered.yaml"
 
-dashboard_paths="$(yq -r 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | (.spec.path // "")' "$TMP_DIR/enmaas-rendered.yaml")"
+dashboard_paths="$(yq -r -N 'select(.kind == "Route" and .spec.host == "'"$DASHBOARD_HOST"'") | .spec.path' "$TMP_DIR/enmaas-rendered.yaml")"
 while IFS= read -r path; do
   case "$path" in
-    ""|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
+    ""|null|/|/api/v1/events|/api/v1/events/*|/api/v1/customers|/api/v1/customers/*)
       echo "dashboard Route exposes a forbidden path: ${path:-<catch-all>}" >&2
       exit 1
       ;;
