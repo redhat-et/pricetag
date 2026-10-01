@@ -41,6 +41,19 @@ PROFILE_DIR="$SCRIPT_DIR/overlays/$PROFILE"
 export KUBECONFIG="$PRICETAG_KUBECONFIG"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+show_diff() {
+  local manifest="$1" diff_status
+  if oc diff -f "$manifest"; then
+    diff_status=0
+  else
+    diff_status=$?
+  fi
+  case "$diff_status" in
+    0) echo "oc diff: no changes" ;;
+    1) echo "oc diff: changes are present (expected preflight result)" ;;
+    *) die "oc diff failed with exit status $diff_status" ;;
+  esac
+}
 
 [[ "$METERING_MODEL_POLICY_CHECK" == true || "$METERING_MODEL_POLICY_CHECK" == false ]] || \
   die "METERING_MODEL_POLICY_CHECK must be true or false"
@@ -171,6 +184,8 @@ export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST LEGACY_GATEWAY_HOST KUBE_DNS_SERV
 
 if [[ "$PREFLIGHT_ONLY" == true ]]; then
   [[ "$PROFILE" == enmaas ]] || die "PREFLIGHT_ONLY currently supports PROFILE=enmaas only"
+  [[ "$DATABASE_BACKEND" == rds ]] || die "EnMaaS PREFLIGHT_ONLY requires DATABASE_BACKEND=rds"
+  [[ -n "${RDS_EGRESS_CIDR:-}" ]] || die "RDS_EGRESS_CIDR is required for EnMaaS preflight"
   : "${VERTEX_IMAGE_DIGEST:?Set VERTEX_IMAGE_DIGEST for preflight}"
   : "${METERING_IMAGE_DIGEST:?Set METERING_IMAGE_DIGEST for preflight}"
   RENDER_DIR="$(mktemp -d)"
@@ -187,7 +202,7 @@ if [[ "$PREFLIGHT_ONLY" == true ]]; then
       die "TLS secret $tls_secret (type kubernetes.io/tls) is missing"
   done
   echo "== preflight-only: rendered changes (no mutation) =="
-  oc diff -f "$RENDER_DIR/final.yaml" || true
+  show_diff "$RENDER_DIR/final.yaml"
   echo "== preflight-only complete: no resources were applied =="
   exit 0
 fi
@@ -529,7 +544,7 @@ fi
 # Show exactly what this run will change before it changes it. oc diff exits 1
 # when differences exist, which is the normal case for a deploy.
 echo "== preflight: changes this deployment will apply =="
-oc diff -f "$RENDER_DIR/final.yaml" || true
+show_diff "$RENDER_DIR/final.yaml"
 echo "== end preflight =="
 
 oc apply -f "$RENDER_DIR/final.yaml"
