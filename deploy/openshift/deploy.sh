@@ -14,6 +14,9 @@ UPDATE_CONFIG="${UPDATE_CONFIG:-false}"
 DATABASE_BACKEND="${DATABASE_BACKEND:-cnpg}"
 METERING_MODEL_POLICY_CHECK="${METERING_MODEL_POLICY_CHECK:-false}"
 export METERING_MODEL_POLICY_CHECK
+# Render and diff only; this mode must not create Secrets, Builds, CRDs, or
+# workloads. It is the required first step for a reviewed EnMaaS rollout.
+PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-false}"
 # Optional approved MaaSSubscription manifest. EnMaaS installation must not
 # depend on the subscription being ready: the manifest is applied when supplied
 # and failures are warnings so the platform can still be installed safely.
@@ -41,6 +44,8 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$METERING_MODEL_POLICY_CHECK" == true || "$METERING_MODEL_POLICY_CHECK" == false ]] || \
   die "METERING_MODEL_POLICY_CHECK must be true or false"
+[[ "$PREFLIGHT_ONLY" == true || "$PREFLIGHT_ONLY" == false ]] || \
+  die "PREFLIGHT_ONLY must be true or false"
 [[ "$PRAXIS_PUBLIC_ADMIN" == true || "$PRAXIS_PUBLIC_ADMIN" == false ]] || \
   die "PRAXIS_PUBLIC_ADMIN must be true or false"
 
@@ -163,6 +168,29 @@ LEGACY_GATEWAY_HOST="${LEGACY_GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMA
 [[ "$RETIRE_LEGACY_GATEWAY_HOSTS" == true || "$RETIRE_LEGACY_GATEWAY_HOSTS" == false ]] || \
   die "RETIRE_LEGACY_GATEWAY_HOSTS must be true or false"
 export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST LEGACY_GATEWAY_HOST KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP
+
+if [[ "$PREFLIGHT_ONLY" == true ]]; then
+  [[ "$PROFILE" == enmaas ]] || die "PREFLIGHT_ONLY currently supports PROFILE=enmaas only"
+  : "${VERTEX_IMAGE_DIGEST:?Set VERTEX_IMAGE_DIGEST for preflight}"
+  : "${METERING_IMAGE_DIGEST:?Set METERING_IMAGE_DIGEST for preflight}"
+  RENDER_DIR="$(mktemp -d)"
+  trap 'rm -rf "$RENDER_DIR"' EXIT
+  oc kustomize "$PROFILE_DIR" > "$RENDER_DIR/manifests.yaml"
+  command -v python3 >/dev/null || die "python3 is required to render the EnMaaS Vertex config fragments"
+  python3 "$SCRIPT_DIR/render-enmaas-vertex.py" \
+    "$RENDER_DIR/manifests.yaml" "$PROFILE_DIR/vertex-fragments" \
+    > "$RENDER_DIR/with-vertex.yaml"
+  envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
+    < "$RENDER_DIR/with-vertex.yaml" > "$RENDER_DIR/final.yaml"
+  for tls_secret in api-enmaas-tls dashboard-enmaas-tls; do
+    [[ "$(oc -n "$NAMESPACE" get secret "$tls_secret" -o jsonpath='{.type}' 2>/dev/null)" == kubernetes.io/tls ]] || \
+      die "TLS secret $tls_secret (type kubernetes.io/tls) is missing"
+  done
+  echo "== preflight-only: rendered changes (no mutation) =="
+  oc diff -f "$RENDER_DIR/final.yaml" || true
+  echo "== preflight-only complete: no resources were applied =="
+  exit 0
+fi
 
 if [[ "$PROFILE" == enmaas ]]; then
   : "${AWS_ROLE_ARN:?Set AWS_ROLE_ARN to the EnMaaS CNPG backup role ARN}"
