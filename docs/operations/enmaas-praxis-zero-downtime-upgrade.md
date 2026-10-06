@@ -16,6 +16,18 @@ The current repository does not contain the old `deploy/openshift/shadow.sh`
 workflow. Do not copy the dogfood shadow commands into EnMaaS. Use an approved
 stage or shadow environment for deep behavior testing before this runbook.
 
+`maxUnavailable=0` prevents a planned reduction in Ready replicas. It does not
+prove that a new pod handles inference correctly, nor does it prevent the new
+pod from receiving live traffic as soon as its readiness probe passes. This
+runbook is therefore a compatible-release rolling procedure, not a complete
+canary procedure.
+
+The current Praxis readiness probe checks the local `/healthy` endpoint. It does
+not independently prove every inference listener, stream, tool path, or
+metering path. The current deployment also uses a 30-second termination grace
+period and has no documented stream-drain hook. Do not claim uninterrupted
+long-lived streams until graceful drain is tested for the target Praxis build.
+
 ## 1. Decide the change type
 
 ### Binary-only change
@@ -33,6 +45,17 @@ restart for EnMaaS.
 Do not run the full deployment script only to update a Praxis image if its diff
 would reconcile unrelated Metering, MaaS, Route, or Secret changes. Use the
 direct image path instead.
+
+### Major behavior change
+
+For a major core, filter, protocol, routing, or streaming change, first use an
+approved stage or shadow environment. Test native Anthropic, OpenAI, streaming,
+tool, authentication, and metering behavior before production.
+
+The current EnMaaS namespace has no shadow Deployment and no weighted alternate
+Route backend. Do not invent Route weights during an upgrade. If a production
+canary is required, add and review that capability separately before the
+upgrade.
 
 ## 2. Preflight the live target
 
@@ -61,7 +84,9 @@ oc -n "$NAMESPACE" get route -l app=praxis -o yaml > praxis-routes-before.yaml
 
 Stop unless the deployment is fully ready and the strategy is `0/1`. Confirm
 that all required Routes are admitted. Do not change Route weights during a
-binary-only rollout.
+binary-only rollout. Also record the termination grace period and confirm that
+the expected longest stream can drain within it. If that drain behavior is not
+proven, stop and use a tested stage or planned maintenance window.
 
 ## 3. Validate the source and live configuration
 
@@ -137,6 +162,10 @@ Do not restart or scale MaaS, Metering, or Praxis manually. Do not edit Routes
 for this path. If a new pod is not Ready, the rollout must stop with old pods
 still serving. Investigate or roll back; do not force-delete old pods.
 
+This protects availability while pods are replaced. It does not protect against
+a behavior regression in a Ready pod. Use the validation gates in Section 7
+before considering the upgrade successful.
+
 ## 6. Apply a configuration change
 
 For a configuration change, use the guarded `deploy.sh` path with a reviewed
@@ -187,6 +216,10 @@ Confirm that:
 - `/health` and `/ready` pass;
 - unauthenticated requests still return `401`;
 - inference and metering behavior matches the approved acceptance criteria.
+
+For long-lived streaming traffic, also confirm that an old pod can stop without
+cutting an active stream unexpectedly. A successful Deployment rollout alone
+is not evidence of graceful stream draining.
 
 ## 8. Rollback
 
