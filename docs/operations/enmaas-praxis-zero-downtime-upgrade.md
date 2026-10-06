@@ -74,6 +74,10 @@ oc -n "$NAMESPACE" get deployment/praxis \
 export PREVIOUS_IMAGE="$(oc -n "$NAMESPACE" get deployment/praxis \
   -o jsonpath='{.spec.template.spec.containers[0].image}')"
 test -n "$PREVIOUS_IMAGE"
+if [[ ! "$PREVIOUS_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "previous Praxis image is not digest-pinned: $PREVIOUS_IMAGE" >&2
+  exit 1
+fi
 printf 'Previous image: %s\n' "$PREVIOUS_IMAGE"
 printf '%s\n' "$PREVIOUS_IMAGE" > praxis-previous-image.txt
 
@@ -153,6 +157,19 @@ changes only Praxis:
 ```bash
 export NEW_IMAGE="image-registry.openshift-image-registry.svc:5000/enmaas/praxis-ai@${PRAXIS_IMAGE_DIGEST}"
 
+: "${PRICETAG_KUBECONFIG:?Set PRICETAG_KUBECONFIG to the dedicated EnMaaS kubeconfig}"
+: "${EXPECTED_OC_SERVER:?Set EXPECTED_OC_SERVER to the EnMaaS API server}"
+: "${PROTECTED_OC_SERVER:?Set PROTECTED_OC_SERVER to the protected cluster API server}"
+export KUBECONFIG="$PRICETAG_KUBECONFIG"
+ACTUAL_OC_SERVER="$(oc whoami --show-server)"
+test "$ACTUAL_OC_SERVER" = "$EXPECTED_OC_SERVER"
+test "$ACTUAL_OC_SERVER" != "$PROTECTED_OC_SERVER"
+
+if [[ ! "$PREVIOUS_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "refusing rollout: saved previous image is not digest-pinned" >&2
+  exit 1
+fi
+
 oc -n enmaas set image deployment/praxis "praxis=${NEW_IMAGE}"
 oc -n enmaas rollout status deployment/praxis --timeout=15m
 oc -n enmaas get deployment/praxis
@@ -228,7 +245,17 @@ Routes or other workloads:
 
 ```bash
 export PREVIOUS_IMAGE="$(cat praxis-previous-image.txt)"
-test -n "$PREVIOUS_IMAGE"
+if [[ ! "$PREVIOUS_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "refusing rollback: saved image is not digest-pinned" >&2
+  exit 1
+fi
+: "${PRICETAG_KUBECONFIG:?Set PRICETAG_KUBECONFIG to the dedicated EnMaaS kubeconfig}"
+: "${EXPECTED_OC_SERVER:?Set EXPECTED_OC_SERVER to the EnMaaS API server}"
+: "${PROTECTED_OC_SERVER:?Set PROTECTED_OC_SERVER to the protected cluster API server}"
+export KUBECONFIG="$PRICETAG_KUBECONFIG"
+ACTUAL_OC_SERVER="$(oc whoami --show-server)"
+test "$ACTUAL_OC_SERVER" = "$EXPECTED_OC_SERVER"
+test "$ACTUAL_OC_SERVER" != "$PROTECTED_OC_SERVER"
 oc -n enmaas set image deployment/praxis "praxis=${PREVIOUS_IMAGE}"
 oc -n enmaas rollout status deployment/praxis --timeout=15m
 ```
