@@ -101,6 +101,13 @@ Save the current Deployment for rollback, verify the rolling strategy, and
 change only the Metering image:
 
 ```bash
+export PREVIOUS_IMAGE="$(oc -n enmaas get deployment/metering-service \
+  -o jsonpath='{.spec.template.spec.containers[0].image}')"
+test -n "$PREVIOUS_IMAGE"
+printf 'Previous image: %s\n' "$PREVIOUS_IMAGE"
+printf '%s\n' "$PREVIOUS_IMAGE" \
+  > "metering-service-previous-image-${IMAGE_TAG}.txt"
+
 oc -n enmaas get deployment/metering-service -o yaml \
   > "metering-service-before-${IMAGE_TAG}.yaml"
 
@@ -147,6 +154,7 @@ approval:
 
 ```bash
 MODEL_FREE='rits/zai-org/glm-5-3' \
+MODEL_OPENAI='gpt-5.6-luna' \
   PATH=/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH \
   ./tools/functional-test.sh --target enmaas --level inference --confirm-prod
 ```
@@ -154,11 +162,14 @@ MODEL_FREE='rits/zai-org/glm-5-3' \
 ## 7. Rollback
 
 If readiness, API health, or error rates regress, restore the previous recorded
-digest. This does not change Praxis or MaaS:
+image. This does not change Praxis or MaaS. Use the same shell's
+`PREVIOUS_IMAGE`, or load the saved value in a new shell:
 
 ```bash
+export PREVIOUS_IMAGE="$(cat "metering-service-previous-image-${IMAGE_TAG}.txt")"
+test -n "$PREVIOUS_IMAGE"
 oc -n enmaas set image deployment/metering-service \
-  'metering-service=image-registry.openshift-image-registry.svc:5000/enmaas/metering-service@sha256:<previous-digest>'
+  "metering-service=${PREVIOUS_IMAGE}"
 oc -n enmaas rollout status deployment/metering-service --timeout=10m
 ```
 
