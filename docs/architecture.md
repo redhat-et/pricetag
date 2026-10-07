@@ -100,7 +100,7 @@ successful, billed call that looks like a failure. Budget accordingly.
 ### Gemini through Vertex
 
 The EnMaaS overlay advertises `gemini-3.6-flash`, `gemini-3.7-flash`,
-`gemini-3.8-flash`, `gemini-3-pro-preview`, and `gemini-3.1-pro-preview` in
+`gemini-3.8-flash`, and `gemini-3.1-pro-preview` in
 the OpenAI-format `/v1/models` catalog. Clients send the public ID to
 `/v1/chat/completions` with their EnMaaS Bearer token:
 
@@ -122,7 +122,7 @@ allowlist and catalogs do not advertise or permit Gemini.
 
 These are deployment configuration entries; inference still requires the
 model to be available to `${VERTEX_PROJECT}`. Verify each ID in the target
-project after deployment, especially the preview models. No live Gemini
+project after deployment, especially Gemini 3.1 Pro Preview. No live Gemini
 inference has been verified by the repository's static checks.
 
 ## Data

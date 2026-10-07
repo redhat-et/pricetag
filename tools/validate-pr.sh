@@ -234,7 +234,7 @@ yq -e '.filter_chains[] | select(.name == "openai")' "$TMP_DIR/praxis.yaml" >"$T
 # Gemini model cannot silently fall through to api.openai.com.
 yq -e '[.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "openai")][0]' \
   "$TMP_DIR/praxis.yaml" >"$TMP_DIR/openai-catalog.yaml"
-for model in gemini-3.6-flash gemini-3.7-flash gemini-3.8-flash gemini-3-pro-preview gemini-3.1-pro-preview; do
+for model in gemini-3.6-flash gemini-3.7-flash gemini-3.8-flash gemini-3.1-pro-preview; do
   yq -e '.models[] | select(.id == "'"$model"'" and .owned_by == "vertex")' \
     "$TMP_DIR/openai-catalog.yaml" >/dev/null
   yq -e '.filters[] | select(.filter == "model_to_provider") | .models[] | select(.model == "'"$model"'" and .provider == "vertex" and .target_model == "google/'"$model"'") | select((.paths | length) == 1 and .paths[0] == "/v1/chat/completions")' \

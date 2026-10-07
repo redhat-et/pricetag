@@ -17,11 +17,6 @@
       target_model: google/gemini-3.8-flash
       paths:
         - /v1/chat/completions
-    - model: gemini-3-pro-preview
-      provider: vertex
-      target_model: google/gemini-3-pro-preview
-      paths:
-        - /v1/chat/completions
     - model: gemini-3.1-pro-preview
       provider: vertex
       target_model: google/gemini-3.1-pro-preview
