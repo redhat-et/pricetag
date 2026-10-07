@@ -1,0 +1,29 @@
+# Vertex's Chat Completions API expects Google publisher IDs. The Anthropic
+# vertex filter is only for Claude rawPredict and must not handle these models.
+- filter: model_to_provider
+  models:
+    - model: gemini-3.6-flash
+      provider: vertex
+      target_model: google/gemini-3.6-flash
+      paths:
+        - /v1/chat/completions
+    - model: gemini-3.7-flash
+      provider: vertex
+      target_model: google/gemini-3.7-flash
+      paths:
+        - /v1/chat/completions
+    - model: gemini-3.8-flash
+      provider: vertex
+      target_model: google/gemini-3.8-flash
+      paths:
+        - /v1/chat/completions
+    - model: gemini-3-pro-preview
+      provider: vertex
+      target_model: google/gemini-3-pro-preview
+      paths:
+        - /v1/chat/completions
+    - model: gemini-3.1-pro-preview
+      provider: vertex
+      target_model: google/gemini-3.1-pro-preview
+      paths:
+        - /v1/chat/completions

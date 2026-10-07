@@ -227,6 +227,36 @@ grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
 grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 
+echo "== EnMaaS Gemini Chat Completions contract =="
+yq -e '.filter_chains[] | select(.name == "openai")' "$TMP_DIR/praxis.yaml" >"$TMP_DIR/openai-chain.yaml"
+# /v1/models is served by unified, while Chat Completions goes to openai.
+# Check the effective catalog and the serving chain together so a listed
+# Gemini model cannot silently fall through to api.openai.com.
+yq -e '[.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "openai")][0]' \
+  "$TMP_DIR/praxis.yaml" >"$TMP_DIR/openai-catalog.yaml"
+for model in gemini-3.6-flash gemini-3.7-flash gemini-3.8-flash gemini-3-pro-preview gemini-3.1-pro-preview; do
+  yq -e '.models[] | select(.id == "'"$model"'" and .owned_by == "vertex")' \
+    "$TMP_DIR/openai-catalog.yaml" >/dev/null
+  yq -e '.filters[] | select(.filter == "model_to_provider") | .models[] | select(.model == "'"$model"'" and .provider == "vertex" and .target_model == "google/'"$model"'") | select((.paths | length) == 1 and .paths[0] == "/v1/chat/completions")' \
+    "$TMP_DIR/openai-chain.yaml" >/dev/null
+  refute yq -e '.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "anthropic") | .models[] | select(.id == "'"$model"'")' "$TMP_DIR/praxis.yaml"
+done
+yq -e '.filters[] | select(.filter == "router") | .routes[0] | select(.headers."x-praxis-ai-provider" == "vertex" and .cluster == "vertex")' \
+  "$TMP_DIR/openai-chain.yaml" >/dev/null
+yq -e '.filters[] | select(.filter == "path_rewrite") | select(.replace.pattern == "^/v1/chat/completions$" and .replace.replacement == "/v1beta1/projects/ci-placeholder-project/locations/global/endpoints/openapi/chat/completions" and .conditions[0].when.headers."x-praxis-ai-provider" == "vertex")' \
+  "$TMP_DIR/openai-chain.yaml" >/dev/null
+yq -e '.filters[] | select(.filter == "gcp_adc" and .source == "key_file" and .credentials_file == "/etc/vertex-sa/sa-key.json") | select((.clusters | length) == 1 and .clusters[0] == "vertex")' \
+  "$TMP_DIR/openai-chain.yaml" >/dev/null
+yq -e '.filters[] | select(.filter == "credential_injection") | .clusters[] | select(.name == "vertex" and .header == "Host" and .value == "aiplatform.googleapis.com")' \
+  "$TMP_DIR/openai-chain.yaml" >/dev/null
+yq -e '.filters[] | select(.filter == "load_balancer") | .clusters[] | select(.name == "vertex" and .tls.sni == "aiplatform.googleapis.com") | select((.endpoints | length) == 1 and .endpoints[0] == "aiplatform.googleapis.com:443")' \
+  "$TMP_DIR/openai-chain.yaml" >/dev/null
+# Claude's Vertex adapter must never translate Gemini Chat Completions.
+refute yq -e '.filters[] | select(.filter == "vertex")' "$TMP_DIR/openai-chain.yaml"
+for profile in test dogfood stage; do
+  refute grep -q 'google/gemini-' "$TMP_DIR/$profile.yaml"
+done
+
 echo "== EnMaaS model-catalog hygiene =="
 # The base anthropic/OpenAI model_catalog filters still render into the EnMaaS
 # ConfigMap alongside the Vertex-only catalog; Metering's /api/v1/models dedups

@@ -80,6 +80,7 @@ parameter spelling. The combinations are not interchangeable:
 | Model family | Endpoint | Token parameter | Wrong combination |
 |---|---|---|---|
 | `claude-*` (Vertex) | `/v1/messages` only | `max_tokens` | `404` on chat/completions — it falls through to the OpenAI upstream, which has no Claude model |
+| `gemini-*` (Vertex) | `/v1/chat/completions` only | `max_tokens` | Messages and Responses are not routed to Gemini |
 | `gpt-5.x` (OpenAI) | `/v1/chat/completions` | `max_completion_tokens` | `400 Unsupported parameter: 'max_tokens'` |
 | `rits/zai-org/glm-5-3` (hosted, free) | either | `max_tokens` | — |
 | `gpt-5.3-codex` | Responses only | — | fails on chat/completions |
@@ -95,6 +96,34 @@ successful, billed call that looks like a failure. Budget accordingly.
 > [#47](https://github.com/redhat-et/pricetag/issues/47). Until it is fixed,
 > model discovery is unreliable for OpenAI-dialect clients; the working model
 > IDs must be configured explicitly.
+
+### Gemini through Vertex
+
+The EnMaaS overlay advertises `gemini-3.6-flash`, `gemini-3.7-flash`,
+`gemini-3.8-flash`, `gemini-3-pro-preview`, and `gemini-3.1-pro-preview` in
+the OpenAI-format `/v1/models` catalog. Clients send the public ID to
+`/v1/chat/completions` with their EnMaaS Bearer token:
+
+```bash
+curl https://api.enmaas.devshift.net/v1/chat/completions \
+  -H "Authorization: Bearer $ENMAAS_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemini-3.8-flash","max_tokens":2048,"messages":[{"role":"user","content":"Reply with exactly OK."}]}'
+```
+
+`openai-model-to-provider.yaml` maps those IDs to `google/<model>` and selects
+the Vertex cluster. `openai-path-rewrite.yaml` selects the global Vertex
+Chat Completions endpoint; the shared GCP credential, Host override, and
+upstream cluster fragments supply authentication and HTTPS routing. This
+follows Google's [Vertex Chat Completions examples](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/migrate/openai/examples).
+The OpenAI listener's existing model-access policy and metering entitlement
+checks apply, using the public model ID. The Anthropic listener's separate
+allowlist and catalogs do not advertise or permit Gemini.
+
+These are deployment configuration entries; inference still requires the
+model to be available to `${VERTEX_PROJECT}`. Verify each ID in the target
+project after deployment, especially the preview models. No live Gemini
+inference has been verified by the repository's static checks.
 
 ## Data
 
