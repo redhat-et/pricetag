@@ -36,6 +36,9 @@
     - id: claude-opus-5-5
       display_name: "Claude Opus 5.5 (Vertex AI)"
       owned_by: vertex
+    - id: claude-sonnet-5-5
+      display_name: "Claude Sonnet 5.5 (Vertex AI)"
+      owned_by: vertex
 
 - filter: model_catalog
   format: openai
@@ -76,4 +79,6 @@
     - id: claude-opus-5
       owned_by: vertex
     - id: claude-opus-5-5
+      owned_by: vertex
+    - id: claude-sonnet-5-5
       owned_by: vertex
