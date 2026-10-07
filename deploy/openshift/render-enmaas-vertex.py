@@ -22,6 +22,12 @@ def main() -> int:
         "ONLY_ACCESS": "vertex-only-access.yaml",
         "ONLY_MODEL_CATALOG": "vertex-only-model-catalog.yaml",
         "METERING_INTERNAL_AUTH": "metering-internal-auth.yaml",
+        "OPENAI_MODEL_TO_PROVIDER_FILTER": "openai-model-to-provider.yaml",
+        "OPENAI_ROUTER_ROUTE": "router-route.yaml",
+        "OPENAI_PATH_REWRITE": "openai-path-rewrite.yaml",
+        "OPENAI_GCP_CREDENTIAL_FILTER": "gcp-credential-filter.yaml",
+        "OPENAI_HOST_OVERRIDE": "vertex-host-override.yaml",
+        "OPENAI_UPSTREAM_CLUSTER": "vertex-cluster.yaml",
     }
 
     for marker, filename in fragments.items():

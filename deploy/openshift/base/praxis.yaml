@@ -61,8 +61,12 @@ data:
           - filter: model_to_header
             header: X-Model
 
+          # Gemini uses Vertex's OpenAI-compatible endpoint on this listener.
+          # ENMAAS_VERTEX_OPENAI_MODEL_TO_PROVIDER_FILTER
+
           - filter: router
             routes:
+              # ENMAAS_VERTEX_OPENAI_ROUTER_ROUTE
               - path_prefix: "/"
                 headers:
                   x-model: "Inferact/Qwen3.8-Flash-Next-NVFP4"
@@ -73,6 +77,9 @@ data:
                 cluster: cb-glm
               - path_prefix: "/"
                 cluster: openai
+
+          # ENMAAS_VERTEX_OPENAI_PATH_REWRITE
+          # ENMAAS_VERTEX_OPENAI_GCP_CREDENTIAL_FILTER
 
           - filter: external_metering
             metering_url: "http://metering-service:8080"
@@ -118,6 +125,8 @@ data:
             request_set:
               - name: "Host"
                 value: "api.openai.com"
+            request_remove:
+              - x-praxis-ai-provider
 
           - filter: credential_injection
             clusters:
@@ -127,6 +136,7 @@ data:
               - name: cb-glm
                 header: Host
                 value: "${CB_GLM_ENDPOINT}"
+              # ENMAAS_VERTEX_OPENAI_HOST_OVERRIDE
 
           - filter: load_balancer
             clusters:
@@ -149,6 +159,7 @@ data:
                 idle_timeout_ms: 45000
                 endpoints:
                   - "${CB_GLM_ENDPOINT}:443"
+              # ENMAAS_VERTEX_OPENAI_UPSTREAM_CLUSTER
 
       - name: benchmark
         filters:

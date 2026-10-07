@@ -1,0 +1,8 @@
+- filter: path_rewrite
+  replace:
+    pattern: "^/v1/chat/completions$"
+    replacement: "/v1beta1/projects/${VERTEX_PROJECT}/locations/global/endpoints/openapi/chat/completions"
+  conditions:
+    - when:
+        headers:
+          x-praxis-ai-provider: vertex

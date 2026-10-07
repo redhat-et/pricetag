@@ -45,6 +45,18 @@
         headers:
           anthropic-version: "2023-06-01"
   models:
+    - id: gemini-3.6-flash
+      display_name: "Gemini 3.6 Flash (Vertex AI)"
+      owned_by: vertex
+    - id: gemini-3.7-flash
+      display_name: "Gemini 3.7 Flash (Vertex AI)"
+      owned_by: vertex
+    - id: gemini-3.8-flash
+      display_name: "Gemini 3.8 Flash (Vertex AI)"
+      owned_by: vertex
+    - id: gemini-3.1-pro-preview
+      display_name: "Gemini 3.1 Pro Preview (Vertex AI)"
+      owned_by: vertex
     - id: claude-sonnet-4-5
       owned_by: vertex
     - id: claude-sonnet-5
