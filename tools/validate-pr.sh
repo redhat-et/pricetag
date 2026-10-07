@@ -241,6 +241,12 @@ for model in gemini-3.6-flash gemini-3.7-flash gemini-3.8-flash gemini-3.1-pro-p
     "$TMP_DIR/openai-chain.yaml" >/dev/null
   refute yq -e '.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "anthropic") | .models[] | select(.id == "'"$model"'")' "$TMP_DIR/praxis.yaml"
 done
+for model in gpt-5.3-codex gpt-5.4 gpt-5.6-luna; do
+  yq -e '.models[] | select(.id == "'"$model"'" and .owned_by == "openai")' \
+    "$TMP_DIR/openai-catalog.yaml" >/dev/null
+done
+yq -e '.models[] | select(.id == "rits/zai-org/glm-5-3" and .owned_by == "curvebender")' \
+  "$TMP_DIR/openai-catalog.yaml" >/dev/null
 yq -e '.filters[] | select(.filter == "router") | .routes[0] | select(.headers."x-praxis-ai-provider" == "vertex" and .cluster == "vertex")' \
   "$TMP_DIR/openai-chain.yaml" >/dev/null
 yq -e '.filters[] | select(.filter == "path_rewrite") | select(.replace.pattern == "^/v1/chat/completions$" and .replace.replacement == "/v1beta1/projects/ci-placeholder-project/locations/global/endpoints/openapi/chat/completions" and .conditions[0].when.headers."x-praxis-ai-provider" == "vertex")' \
