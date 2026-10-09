@@ -102,22 +102,38 @@ def resolve_users_file(argument: str | None) -> Path:
 
 
 def preflight(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str], Path]:
+    explicit_kubeconfig = bool(args.kubeconfig or os.environ.get("KUBECONFIG"))
     if args.kubeconfig:
         os.environ["KUBECONFIG"] = str(Path(args.kubeconfig).expanduser())
-    elif not os.environ.get("KUBECONFIG"):
+
+    def auto_kubeconfig() -> Path | None:
         script_root = Path(__file__).resolve().parents[3]
         for candidate in (Path.cwd() / "pricetag-kubeconfig", script_root / "pricetag-kubeconfig"):
             if candidate.is_file():
-                os.environ["KUBECONFIG"] = str(candidate)
-                break
+                return candidate
+        return None
+
     try:
         identity = oc_run(["whoami"])
         server = oc_run(["whoami", "--show-server"])
     except PreflightError as exc:
-        raise PreflightError(
-            "OpenShift is not authenticated. Run `oc login ...` and retry. "
-            f"Details: {exc}"
-        ) from exc
+        fallback = None if explicit_kubeconfig else auto_kubeconfig()
+        if fallback is not None:
+            os.environ["KUBECONFIG"] = str(fallback)
+            try:
+                identity = oc_run(["whoami"])
+                server = oc_run(["whoami", "--show-server"])
+            except PreflightError:
+                pass
+            else:
+                exc = None
+        if exc is None:
+            pass
+        else:
+            raise PreflightError(
+                "OpenShift is not authenticated. Run `oc login ...` and retry. "
+                f"Details: {exc}"
+            ) from exc
 
     namespace = args.namespace
     try:
