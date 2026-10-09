@@ -124,6 +124,32 @@ oc -n enmaas get deployment/metering-service
 This starts the database migration in the new pods while the old pods remain
 serving. Do not restart Praxis or MaaS for a Metering-only change.
 
+### Startup and migration lock watch
+
+This rollout has an existing Metering startup risk that is not visible from
+`rollout status` alone. Every Metering pod runs database migrations at startup
+under a shared PostgreSQL advisory lock with a 10-second context. If several
+new pods start together, one can hold the lock while another waits past the
+timeout and crash-loops. Pricing initialization has taken approximately
+45–50 seconds in the test environment; larger production data can increase
+the startup and lock-wait risk.
+
+During and after the rollout:
+
+1. Watch both readiness and each pod's restart count. A successful rollout
+   status is not sufficient if a pod has recently restarted.
+2. Wait until every replica is Ready and no new restarts occur for several
+   minutes before declaring success.
+3. Check recent Metering logs and events for migration failures, advisory-lock
+   timeouts, crash loops, or readiness failures. Do not copy credentials,
+   connection strings, or tokens from logs into deployment evidence.
+4. Confirm Metering endpoints are healthy, the advisory-lock queue is clear
+   through the approved database observability path, and `usage_events`
+   ingestion continues.
+5. If a new pod repeatedly fails migration or readiness, stop treating the
+   rollout as healthy and restore the saved image digest using the rollback
+   procedure below. Keep the old Ready replicas serving while investigating.
+
 ## 6. Validate after rollout
 
 Check all pods and recent logs:
