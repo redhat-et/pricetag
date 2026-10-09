@@ -60,6 +60,49 @@ at your own pace; every phase names its rollback.
 
 ## Phase 3 — canary (first traffic touch)
 
+### Continuous upgrade watch
+
+Before any Praxis rollout, start the fixed-screen traffic watch from a terminal
+with a real TTY. It keeps one row per synthetic user plus the real-model canary
+visible, while writing machine-readable JSONL evidence and a final summary:
+
+```bash
+python3 tools/praxis-normal-traffic.py
+```
+
+The tool validates the current `oc` login, discovers the Praxis/metering
+deployments and the OpenAI/Anthropic/GLM routes from that namespace, and stops
+with an actionable error if the login, namespace, deployment, route, or user
+inventory is missing. The namespace defaults to `ai-gateway-dogfood` and can be
+overridden with `--namespace`; the sensitive user inventory can be overridden
+with `--users-file`.
+
+The display is intentionally non-scrolling. Use `←`/`→` or PageUp/PageDown
+to inspect user pages, `p` to pause page rotation, and `q` to stop cleanly.
+The default operational gate is strict: any failed request produces `NO-GO`.
+Use `--max-failures`, `--max-p95-ms`, and `--max-gap-s` only when the change
+plan explicitly documents a less strict budget. Never hide failures with
+retries; the JSONL is the outage evidence. Use `--insecure` only for a
+deliberately non-production staging certificate; TLS verification is enabled
+by default.
+
+#### Upgrade sequence
+
+1. Run the watch for a baseline soak until every lane is `OK` and the summary
+   is `GO`. Save the JSONL and `.summary.json` files.
+2. Record the current Praxis image digest, deployment strategy, pod count,
+   route weights, and configuration checksum.
+3. Perform the rollout with `maxUnavailable=0` and `maxSurge=1`. Change one
+   operational variable at a time; do not combine an image rollout with an
+   unrelated ConfigMap or route change.
+4. Watch the dashboard during the entire rollout. A failed request, a growing
+   per-user gap, a readiness loss, or a new restart is a stop/rollback signal.
+5. Hold the new image at 100% for a post-rollout soak. Compare the summary
+   against the baseline: availability, p95/p99 latency, max gap, and per-user
+   failures must remain within the approved budget.
+6. Archive the JSONL, summary, rollout events, image digests, and route-weight
+   evidence with the change record.
+
 - Route weighted backends, weights RELATIVE — set BOTH sides explicitly:
   `oc set route-backends $r praxis=50 praxis-shadow=50` (all 4 routes).
 - `set route-backends` is not a gettable resource: verify via jsonpath on
