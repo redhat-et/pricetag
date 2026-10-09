@@ -241,6 +241,12 @@ for model in gemini-3.6-flash gemini-3.7-flash gemini-3.8-flash gemini-3.1-pro-p
     "$TMP_DIR/openai-chain.yaml" >/dev/null
   refute yq -e '.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "anthropic") | .models[] | select(.id == "'"$model"'")' "$TMP_DIR/praxis.yaml"
 done
+for model in gpt-5.3-codex gpt-5.4 gpt-5.6-luna; do
+  yq -e '.models[] | select(.id == "'"$model"'" and .owned_by == "openai")' \
+    "$TMP_DIR/openai-catalog.yaml" >/dev/null
+done
+yq -e '.models[] | select(.id == "rits/zai-org/glm-5-3" and .owned_by == "curvebender")' \
+  "$TMP_DIR/openai-catalog.yaml" >/dev/null
 yq -e '.filters[] | select(.filter == "router") | .routes[0] | select(.headers."x-praxis-ai-provider" == "vertex" and .cluster == "vertex")' \
   "$TMP_DIR/openai-chain.yaml" >/dev/null
 yq -e '.filters[] | select(.filter == "path_rewrite") | select(.replace.pattern == "^/v1/chat/completions$" and .replace.replacement == "/v1beta1/projects/ci-placeholder-project/locations/global/endpoints/openapi/chat/completions" and .conditions[0].when.headers."x-praxis-ai-provider" == "vertex")' \
@@ -255,6 +261,34 @@ yq -e '.filters[] | select(.filter == "load_balancer") | .clusters[] | select(.n
 refute yq -e '.filters[] | select(.filter == "vertex")' "$TMP_DIR/openai-chain.yaml"
 for profile in test dogfood stage; do
   refute grep -q 'google/gemini-' "$TMP_DIR/$profile.yaml"
+done
+
+echo "== EnMaaS catalog <-> access consistency =="
+# Review guard (PR #76): a model published in /v1/models (answered by the
+# unified chain) must actually be reachable on the listener that serves its
+# inference, or it is "discoverable but denied". Every openai-format catalog
+# entry is served by the openai chain (Chat Completions / Responses: Gemini ->
+# vertex, GLM -> cb-glm, GPT -> openai). Assert none of them are blocked by that
+# chain's model_access. This verifies the allow-all (empty denylist) posture
+# EXPLICITLY rather than assuming an allowlist entry, so discovery can never
+# drift from access even if someone later narrows the openai chain.
+access_blockers_on_openai() {
+  # Count model_access filters on the openai chain that would block "$1":
+  #   - an allowlist that lists neither "*" nor the model, or
+  #   - a denylist that lists the model.
+  yq -e '[.filters[] | select(.filter == "model_access") |
+    select(
+      (.mode == "allowlist" and ((.models // []) | (contains(["*"]) or contains(["'"$1"'"])) | not))
+      or
+      (.mode == "denylist" and ((.models // []) | contains(["'"$1"'"])))
+    )] | length' "$TMP_DIR/openai-chain.yaml"
+}
+for model in $(yq -r '.models[].id' "$TMP_DIR/openai-catalog.yaml"); do
+  blockers="$(access_blockers_on_openai "$model")"
+  if [ "$blockers" != "0" ]; then
+    echo "model '$model' is published in the openai /v1/models catalog but blocked by model_access on the openai chain ($blockers filter(s))" >&2
+    exit 1
+  fi
 done
 
 echo "== EnMaaS model-catalog hygiene =="
