@@ -263,6 +263,34 @@ for profile in test dogfood stage; do
   refute grep -q 'google/gemini-' "$TMP_DIR/$profile.yaml"
 done
 
+echo "== EnMaaS catalog <-> access consistency =="
+# Review guard (PR #76): a model published in /v1/models (answered by the
+# unified chain) must actually be reachable on the listener that serves its
+# inference, or it is "discoverable but denied". Every openai-format catalog
+# entry is served by the openai chain (Chat Completions / Responses: Gemini ->
+# vertex, GLM -> cb-glm, GPT -> openai). Assert none of them are blocked by that
+# chain's model_access. This verifies the allow-all (empty denylist) posture
+# EXPLICITLY rather than assuming an allowlist entry, so discovery can never
+# drift from access even if someone later narrows the openai chain.
+access_blockers_on_openai() {
+  # Count model_access filters on the openai chain that would block "$1":
+  #   - an allowlist that lists neither "*" nor the model, or
+  #   - a denylist that lists the model.
+  yq -e '[.filters[] | select(.filter == "model_access") |
+    select(
+      (.mode == "allowlist" and ((.models // []) | (contains(["*"]) or contains(["'"$1"'"])) | not))
+      or
+      (.mode == "denylist" and ((.models // []) | contains(["'"$1"'"])))
+    )] | length' "$TMP_DIR/openai-chain.yaml"
+}
+for model in $(yq -r '.models[].id' "$TMP_DIR/openai-catalog.yaml"); do
+  blockers="$(access_blockers_on_openai "$model")"
+  if [ "$blockers" != "0" ]; then
+    echo "model '$model' is published in the openai /v1/models catalog but blocked by model_access on the openai chain ($blockers filter(s))" >&2
+    exit 1
+  fi
+done
+
 echo "== EnMaaS model-catalog hygiene =="
 # The base anthropic/OpenAI model_catalog filters still render into the EnMaaS
 # ConfigMap alongside the Vertex-only catalog; Metering's /api/v1/models dedups
