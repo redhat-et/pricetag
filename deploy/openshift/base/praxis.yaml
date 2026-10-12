@@ -330,8 +330,10 @@ data:
           # Rewrite content block types that vLLM's Anthropic endpoint
           # rejects (server_tool_use, server_tool_result) and that Qwen's
           # chat template chokes on (tool_reference inside tool_result).
-          # Harmless for Anthropic-routed requests.
+          # Scope this lossy compatibility rewrite to the Qwen backend model;
+          # Claude, Vertex, and GLM requests retain provider-specific blocks.
           - filter: content_normalize
+            models: ["Inferact/Qwen3.8-Flash-Next-NVFP4"]
 
           # Qwen's chat template only understands xhigh/medium/low and
           # 400s on the high/minimal values OpenAI-style clients send by
