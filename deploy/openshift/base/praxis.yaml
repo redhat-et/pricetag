@@ -327,12 +327,6 @@ data:
 
           # ENMAAS_VERTEX_GCP_CREDENTIAL_FILTER
 
-          # Rewrite content block types that vLLM's Anthropic endpoint
-          # rejects (server_tool_use, server_tool_result) and that Qwen's
-          # chat template chokes on (tool_reference inside tool_result).
-          # Harmless for Anthropic-routed requests.
-          - filter: content_normalize
-
           # Qwen's chat template only understands xhigh/medium/low and
           # 400s on the high/minimal values OpenAI-style clients send by
           # default (Claude Code effortLevel, Codex reasoning.effort).
