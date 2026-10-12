@@ -206,7 +206,9 @@ for policy in enmaas-allow-maas-api-rds-egress enmaas-allow-metering-rds-egress;
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 done
 
-yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
+yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "true")' \
+  "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
+yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "LIVE_ROLLUPS_ENABLED" and .value == "false")' \
   "$TMP_DIR/enmaas-rendered.yaml" >/dev/null
 for deployment in maas-api metering-service praxis; do
   yq -e "select(.kind == \"Deployment\" and .metadata.name == \"$deployment\") | select(.spec.strategy.type == \"RollingUpdate\" and .spec.strategy.rollingUpdate.maxUnavailable == 0 and .spec.strategy.rollingUpdate.maxSurge == 1)" \
