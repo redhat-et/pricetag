@@ -218,9 +218,13 @@ if [[ -f "$TMP_DIR/enmaas-rendered.yaml" ]]; then
     fail "CNPG operator status ingress is not allowed"
   fi
 
-  if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "false")' \
+  if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "DASHBOARD_USE_ROLLUPS" and .value == "true")' \
     "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
-    fail "metering-service must keep DASHBOARD_USE_ROLLUPS=false until the freshness fail-safe is fixed"
+    fail "metering-service must enable DASHBOARD_USE_ROLLUPS for the validated hourly rollup"
+  fi
+  if ! yq -e 'select(.kind == "Deployment" and .metadata.name == "metering-service") | .spec.template.spec.containers[0].env[] | select(.name == "LIVE_ROLLUPS_ENABLED" and .value == "false")' \
+    "$TMP_DIR/enmaas-rendered.yaml" >/dev/null 2>&1; then
+    fail "metering-service must keep LIVE_ROLLUPS_ENABLED=false to avoid ingestion lock contention"
   fi
 fi
 

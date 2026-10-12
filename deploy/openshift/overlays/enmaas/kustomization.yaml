@@ -337,8 +337,14 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: DASHBOARD_USE_ROLLUPS
-          # Keep rollup reads fail-safe until the pinned metering image clears
-          # maintenance errors and freshness state correctly.
+          # Serve dashboard aggregates from the parity-gated hourly rollup.
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: LIVE_ROLLUPS_ENABLED
+          # Keep ingestion free of the hour-wide advisory lock. Maintenance
+          # rebuilds the recent hours from the raw ledger instead.
           value: "false"
       - op: add
         path: /spec/template/spec/containers/0/env/-
