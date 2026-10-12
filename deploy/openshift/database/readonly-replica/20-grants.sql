@@ -17,8 +17,9 @@ GRANT SELECT ON usage_events    TO metering_reader;
 GRANT SELECT ON model_pricing   TO metering_reader;
 GRANT SELECT ON user_profiles   TO metering_reader;
 GRANT SELECT ON usage_hourly    TO metering_reader;
+GRANT SELECT ON usage_tool_hourly TO metering_reader;
 
--- Self-validation: must return exactly these four tables and nothing
+-- Self-validation: must return exactly these five tables and nothing
 -- else (quota tables, rollup_meta and sequences stay primary-only).
 --   SELECT table_name FROM information_schema.role_table_grants
 --    WHERE grantee = 'metering_reader' GROUP BY 1 ORDER BY 1;

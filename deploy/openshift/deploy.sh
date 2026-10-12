@@ -541,8 +541,6 @@ if [[ "$PROFILE" == enmaas ]]; then
   [[ "$(oc -n "$NAMESPACE" get databaserole metering-reader \
     -o jsonpath='{.status.applied}' 2>/dev/null || true)" == true ]] || \
     die "metering-reader DatabaseRole did not become applied"
-  oc -n "$NAMESPACE" exec -i aigateway-pg-1 -- psql -U postgres -d aigateway \
-    -v ON_ERROR_STOP=1 -f - < "$SCRIPT_DIR/database/readonly-replica/20-grants.sql"
   READER_PASSWORD="$(oc -n "$NAMESPACE" get secret metering-reader-password \
     -o jsonpath='{.data.password}' | base64 --decode)"
   oc -n "$NAMESPACE" create secret generic metering-readonly-db-url \
@@ -594,6 +592,23 @@ show_diff "$RENDER_DIR/final.yaml"
 echo "== end preflight =="
 
 oc apply -f "$RENDER_DIR/final.yaml"
+
+# Apply table-level readonly grants only after the Metering deployment has been
+# applied. On a fresh CNPG database, metering-service creates usage_hourly and
+# usage_tool_hourly during startup; applying grants before that migration makes
+# the whole deployment fail with "relation does not exist". The grant is
+# idempotent and can safely run after the table appears.
+if [[ "$PROFILE" == enmaas && "$DATABASE_BACKEND" != rds ]]; then
+  for _ in $(seq 1 90); do
+    if oc -n "$NAMESPACE" exec aigateway-pg-1 -- psql -U postgres -d aigateway \
+      -tAc "SELECT to_regclass('public.usage_tool_hourly')" 2>/dev/null | grep -qx 'usage_tool_hourly'; then
+      break
+    fi
+    sleep 2
+  done
+  oc -n "$NAMESPACE" exec -i aigateway-pg-1 -- psql -U postgres -d aigateway \
+    -v ON_ERROR_STOP=1 -f - < "$SCRIPT_DIR/database/readonly-replica/20-grants.sql"
+fi
 
 # Compatibility Routes on the former gateway host are managed outside
 # kustomize so the same manifest can be applied or retired by flag. They are
