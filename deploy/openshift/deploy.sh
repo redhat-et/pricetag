@@ -674,7 +674,7 @@ oc -n "$NAMESPACE" set env deployment/metering-service \
 # alone leaves running pods on the previous pipelines. Pin the checksum of the
 # applied config on the pod template: a changed config rolls Praxis through its
 # normal RollingUpdate, while an unchanged config does not restart anything.
-if [[ "$PROFILE" == enmaas ]]; then
+if [[ "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ]]; then
   praxis_config_checksum="$(oc -n "$NAMESPACE" get configmap praxis-config \
     -o jsonpath='{.data.praxis\.yaml}' | sha256_hex)"
   [[ "$praxis_config_checksum" =~ ^[0-9a-f]{64}$ ]] || die "could not compute praxis-config checksum"
