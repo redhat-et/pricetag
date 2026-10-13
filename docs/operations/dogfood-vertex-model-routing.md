@@ -5,11 +5,28 @@ fragments used by EnMaaS. This includes:
 
 - OpenAI-format catalog entries for GPT, Gemini, GLM, and Vertex Claude models.
 - Anthropic-format catalog entries for Claude, hosted models, and GLM.
-- `model_to_provider` mappings for Vertex Claude and Gemini.
+- `intelligent_route` mappings from projected, hot-reloaded routing overlays;
+  the legacy model-to-provider and core router filters are removed from the
+  dogfood OpenAI and unified chains.
+- Candidate `target_model` values rewrite public model IDs to Vertex publisher
+  IDs while preserving the client model for response adapters.
 - Vertex rawPredict and Gemini Chat Completions routing.
 - GCP service-account credentials scoped to the Vertex cluster.
 - The shared model-access and metering filters.
 - A 10-billion-token monthly dogfood safety budget.
+
+The two overlay files are mounted without `subPath` so ConfigMap symlink
+updates are visible to Praxis's watcher:
+
+```text
+/etc/praxis/routing/openai/routing-overlay.json
+/etc/praxis/routing/unified/routing-overlay.json
+```
+
+Changing a candidate's cluster, target model, admission state, or weights can
+therefore be tested by updating the corresponding ConfigMap without a Praxis
+pod restart. Provider clusters, endpoints, TLS, and static credentials remain
+in the rendered Praxis configuration.
 
 The dogfood profile requires an ET Praxis image containing the Vertex filters.
 Deploy only from pushed commits:

@@ -34,6 +34,30 @@ def main() -> int:
     if vertex_only not in {"true", "false"}:
         raise ValueError("VERTEX_ONLY must be true or false")
 
+    if vertex_only == "false":
+        # Remove the legacy router blocks before fragment replacement removes
+        # the marker comments that delimit the blocks. The provider-specific
+        # path rewrite and credential fragments must remain in the chain.
+        for chain_name, next_marker in (
+            ("openai", "ENMAAS_VERTEX_OPENAI_PATH_REWRITE"),
+            ("unified", "ENMAAS_VERTEX_GCP_CREDENTIAL_FILTER"),
+        ):
+            chain = re.search(
+                rf"(?ms)^      - name: {chain_name}\n        filters:\n(?P<body>.*?)(?=^      - name: |\Z)",
+                rendered,
+            )
+            if chain is None:
+                raise ValueError(f"could not find {chain_name} filter chain")
+            body, removed = re.subn(
+                rf"(?ms)^          - filter: router\n.*?(?=^          # {next_marker}\s*$)",
+                "",
+                chain.group("body"),
+                count=1,
+            )
+            if removed != 1:
+                raise ValueError(f"expected one legacy router in {chain_name}, found {removed}")
+            rendered = rendered[: chain.start("body")] + body + rendered[chain.end("body") :]
+
     for marker, filename in fragments.items():
         pattern = re.compile(rf"(?m)^(?P<indent>[ \t]*)# ENMAAS_VERTEX_{marker}\s*$")
         # The dogfood profile serves the complete shared catalog and access
@@ -44,6 +68,12 @@ def main() -> int:
             snippet = []
         elif vertex_only == "false" and marker == "ONLY_MODEL_CATALOG":
             snippet = (fragments_dir / "dogfood-model-catalog.yaml").read_text().rstrip("\n").splitlines()
+        elif vertex_only == "false" and marker == "MODEL_TO_PROVIDER_FILTER":
+            snippet = (fragments_dir / "intelligent-route-unified.yaml").read_text().rstrip("\n").splitlines()
+        elif vertex_only == "false" and marker == "OPENAI_MODEL_TO_PROVIDER_FILTER":
+            snippet = (fragments_dir / "intelligent-route-openai.yaml").read_text().rstrip("\n").splitlines()
+        elif vertex_only == "false" and marker in {"ROUTER_ROUTE", "OPENAI_ROUTER_ROUTE"}:
+            snippet = []
         else:
             snippet = (fragments_dir / filename).read_text().rstrip("\n").splitlines()
 
@@ -52,7 +82,10 @@ def main() -> int:
             return "\n".join(f"{indent}{line}" if line else indent for line in snippet)
 
         rendered, replacements = pattern.subn(replace, rendered)
-        expected = 3 if marker == "METERING_INTERNAL_AUTH" else 1
+        if vertex_only == "false" and marker in {"ROUTER_ROUTE", "OPENAI_ROUTER_ROUTE"}:
+            expected = 0
+        else:
+            expected = 3 if marker == "METERING_INTERNAL_AUTH" else 1
         if replacements != expected:
             raise ValueError(f"expected {expected} insertion markers for {marker}, found {replacements}")
 

@@ -243,7 +243,13 @@ grep -q 'gemini-3.6-flash' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'gpt-5.6-luna' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'claude-sonnet-5-5' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'rits/zai-org/glm-5-3' "$TMP_DIR/dogfood-praxis.yaml"
-grep -q 'filter: model_to_provider' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'filter: intelligent_route' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q '/etc/praxis/routing/openai/routing-overlay.json' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q '/etc/praxis/routing/unified/routing-overlay.json' "$TMP_DIR/dogfood-praxis.yaml"
+if grep -q 'filter: model_to_provider' "$TMP_DIR/dogfood-praxis.yaml"; then
+  echo "dogfood render must not retain static model_to_provider routing" >&2
+  exit 1
+fi
 grep -q 'filter: vertex' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'filter: gcp_adc' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'secretName: vertex-sa-key' "$TMP_DIR/dogfood-rendered.yaml"
@@ -287,7 +293,9 @@ yq -e '.filters[] | select(.filter == "load_balancer") | .clusters[] | select(.n
   "$TMP_DIR/openai-chain.yaml" >/dev/null
 # Claude's Vertex adapter must never translate Gemini Chat Completions.
 refute yq -e '.filters[] | select(.filter == "vertex")' "$TMP_DIR/openai-chain.yaml"
-for profile in test dogfood stage; do
+# Dogfood intentionally carries the hot-reloaded Vertex routing overlays;
+# test/stage remain on the legacy profile and must not gain Vertex targets.
+for profile in test stage; do
   refute grep -q 'google/gemini-' "$TMP_DIR/$profile.yaml"
 done
 
