@@ -627,7 +627,9 @@ fi
 # host into the embedded welcome page so its Dashboard link never falls back
 # to the template placeholder. This is deliberately derived after apply: the
 # route host is not known when the static manifest is rendered.
-dashboard_host="$(oc -n "$NAMESPACE" get route dashboard-welcome -o jsonpath='{.spec.host}')"
+dashboard_route=dashboard-welcome
+[[ "$PROFILE" == dogfood ]] && dashboard_route=dashboard
+dashboard_host="$(oc -n "$NAMESPACE" get route "$dashboard_route" -o jsonpath='{.spec.host}')"
 [[ -n "$dashboard_host" ]] || die "dashboard Route has no host"
 oc -n "$NAMESPACE" set env deployment/metering-service \
   "WELCOME_DASHBOARD_URL=https://${dashboard_host}" >/dev/null
