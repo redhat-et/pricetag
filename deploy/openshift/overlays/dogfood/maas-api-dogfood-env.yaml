@@ -18,3 +18,8 @@
   value:
     name: METRICS_SECURE
     value: "false"
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: MAAS_SUBSCRIPTION_MODE
+    value: standalone
