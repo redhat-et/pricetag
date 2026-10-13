@@ -311,8 +311,13 @@ if [[ "$PROFILE" == dogfood ]] && secret_exists provider-credentials && \
   # Older dogfood deployments used LITELLM_API_KEY for the Curvebender route.
   # Preserve that existing credential under the explicit filter-specific name
   # without printing or requiring the operator to re-enter the secret.
-  CB_LITELLM_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials \
-    -o jsonpath='{.data.LITELLM_API_KEY}' | base64 --decode)"
+  if secret_exists cb-litellm-fid && secret_has_key cb-litellm-fid key; then
+    CB_LITELLM_API_KEY="$(oc -n "$NAMESPACE" get secret cb-litellm-fid \
+      -o jsonpath='{.data.key}' | base64 --decode)"
+  else
+    CB_LITELLM_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials \
+      -o jsonpath='{.data.LITELLM_API_KEY}' | base64 --decode)"
+  fi
   oc -n "$NAMESPACE" create secret generic provider-credentials \
     --from-literal=ANTHROPIC_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials -o jsonpath='{.data.ANTHROPIC_API_KEY}' | base64 --decode)" \
     --from-literal=OPENAI_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials -o jsonpath='{.data.OPENAI_API_KEY}' | base64 --decode)" \

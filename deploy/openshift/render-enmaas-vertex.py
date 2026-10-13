@@ -41,7 +41,7 @@ def main() -> int:
         # public catalog to Vertex models. Keep one fragment set, but remove
         # the narrowing fragments from the dogfood render.
         if vertex_only == "false" and marker == "ONLY_ACCESS":
-            snippet = []
+            snippet = (fragments_dir / "dogfood-model-access.yaml").read_text().rstrip("\n").splitlines()
         elif vertex_only == "false" and marker == "ONLY_MODEL_CATALOG":
             snippet = (fragments_dir / "dogfood-model-catalog.yaml").read_text().rstrip("\n").splitlines()
         else:
