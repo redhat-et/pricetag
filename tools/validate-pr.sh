@@ -248,6 +248,8 @@ grep -q 'filter: vertex' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'filter: gcp_adc' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q 'secretName: vertex-sa-key' "$TMP_DIR/dogfood-rendered.yaml"
 grep -q '@sha256:1111111111111111111111111111111111111111111111111111111111111111' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'name: MONTHLY_TOKEN_QUOTA' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'value: "10000000000"' "$TMP_DIR/dogfood-rendered.yaml"
 if grep -q 'vertex-only' "$TMP_DIR/dogfood-praxis.yaml"; then
   echo "dogfood render must keep the shared catalog/access policy" >&2
   exit 1

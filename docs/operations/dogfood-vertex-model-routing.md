@@ -9,6 +9,7 @@ fragments used by EnMaaS. This includes:
 - Vertex rawPredict and Gemini Chat Completions routing.
 - GCP service-account credentials scoped to the Vertex cluster.
 - The shared model-access and metering filters.
+- A 10-billion-token monthly dogfood safety budget.
 
 The dogfood profile requires an ET Praxis image containing the Vertex filters.
 Deploy only from pushed commits:
