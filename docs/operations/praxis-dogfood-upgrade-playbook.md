@@ -166,7 +166,7 @@ they are not counted as successful provider coverage.
 Rebase distance must be measured against the upstream snapshot used by the
 rebase, not against a later moving upstream branch. The comparison used the
 common pre-rebase base `0048946358`, the old ET tip `1a00d3b4`, the upstream
-snapshot `75e8662d` (`praxis` 0.6.0), and the final PR #10 tree.
+snapshot `75e8662d` (`praxis` 0.6.0, 2026-10-09), and the final PR #10 tree.
 
 | Snapshot | Upstream relationship | Downstream patch footprint |
 |---|---|---|
@@ -176,14 +176,19 @@ snapshot `75e8662d` (`praxis` 0.6.0), and the final PR #10 tree.
 
 The downstream footprint therefore shrank by eight files, 956 additions, and
 495 deletions after the rebase and review cleanup. The current upstream has
-continued moving since `75e8662d`, so a future freshness check should repeat
-the same measurement against a newly pinned upstream commit.
+continued moving since `75e8662d`: as of 2026-10-13 its tip is `d5b05be0`,
+23 upstream commits later. On the ancestry-preserving PR #9 branch,
+`68372c78...d5b05be0` is `69` ET-only commits versus `23` upstream-only
+commits. The final ET merge is a squash commit, so its ancestry count is not
+comparable; use its tree for content comparison and the PR #9 branch for
+freshness tracking.
 
 Reproduce the measurement with the clean repositories:
 
 ```bash
 git rev-list --left-right --count 1a00d3b4...75e8662d
 git rev-list --left-right --count 68372c78...75e8662d
+git rev-list --left-right --count 68372c78...d5b05be0
 git diff --numstat "$(git merge-base 1a00d3b4 75e8662d)" 1a00d3b4
 git diff --numstat 75e8662d 0b35bf3e
 ```
