@@ -241,6 +241,13 @@ config_exists() { oc -n "$NAMESPACE" get configmap "$1" >/dev/null 2>&1; }
 secret_has_key() {
   [[ -n "$(oc -n "$NAMESPACE" get secret "$1" -o jsonpath="{.data['$2']}" 2>/dev/null)" ]]
 }
+provider_credentials_complete() {
+  secret_exists provider-credentials &&
+    secret_has_key provider-credentials ANTHROPIC_API_KEY &&
+    secret_has_key provider-credentials OPENAI_API_KEY &&
+    secret_has_key provider-credentials LITELLM_API_KEY &&
+    secret_has_key provider-credentials CB_LITELLM_API_KEY
+}
 partner_api_secret_complete() {
   secret_exists metering-partner-api &&
     secret_has_key metering-partner-api usage-report &&
@@ -297,7 +304,17 @@ oc -n "$NAMESPACE" create secret generic maas-db-config \
   --from-literal=DB_CONNECTION_URL="$MAAS_DATABASE_URL" \
   --dry-run=client -o yaml | oc apply -f -
 
-if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
+if [[ "$PROFILE" == dogfood ]] && secret_exists provider-credentials && \
+   secret_has_key provider-credentials LITELLM_API_KEY && \
+   ! secret_has_key provider-credentials CB_LITELLM_API_KEY && \
+   [[ "$ROTATE_SECRETS" == false ]]; then
+  # Older dogfood deployments used LITELLM_API_KEY for the Curvebender route.
+  # Preserve that existing credential under the explicit filter-specific name
+  # without printing or requiring the operator to re-enter the secret.
+  CB_LITELLM_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials \
+    -o jsonpath='{.data.LITELLM_API_KEY}' | base64 --decode)"
+fi
+if ! provider_credentials_complete || [[ "$ROTATE_SECRETS" == true ]]; then
   for name in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_API_KEY CB_LITELLM_API_KEY; do
     [[ -n "${!name:-}" ]] || die "$name is required to create provider-credentials"
   done
