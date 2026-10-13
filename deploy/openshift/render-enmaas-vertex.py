@@ -30,9 +30,22 @@ def main() -> int:
         "OPENAI_UPSTREAM_CLUSTER": "vertex-cluster.yaml",
     }
 
+    vertex_only = os.environ.get("VERTEX_ONLY", "true")
+    if vertex_only not in {"true", "false"}:
+        raise ValueError("VERTEX_ONLY must be true or false")
+
     for marker, filename in fragments.items():
         pattern = re.compile(rf"(?m)^(?P<indent>[ \t]*)# ENMAAS_VERTEX_{marker}\s*$")
-        snippet = (fragments_dir / filename).read_text().rstrip("\n").splitlines()
+        # The dogfood profile serves the complete shared catalog and access
+        # policy, while EnMaaS uses the corresponding markers to narrow its
+        # public catalog to Vertex models. Keep one fragment set, but remove
+        # the narrowing fragments from the dogfood render.
+        if vertex_only == "false" and marker == "ONLY_ACCESS":
+            snippet = []
+        elif vertex_only == "false" and marker == "ONLY_MODEL_CATALOG":
+            snippet = (fragments_dir / "dogfood-model-catalog.yaml").read_text().rstrip("\n").splitlines()
+        else:
+            snippet = (fragments_dir / filename).read_text().rstrip("\n").splitlines()
 
         def replace(match: re.Match[str]) -> str:
             indent = match.group("indent")

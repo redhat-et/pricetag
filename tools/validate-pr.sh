@@ -229,6 +229,31 @@ grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
 grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 
+echo "== Dogfood rendered Praxis configuration =="
+kubectl kustomize deploy/openshift/overlays/dogfood >"$TMP_DIR/dogfood-kustomized.yaml"
+VERTEX_ONLY=false python3 deploy/openshift/render-enmaas-vertex.py \
+  "$TMP_DIR/dogfood-kustomized.yaml" \
+  deploy/openshift/overlays/enmaas/vertex-fragments \
+  >"$TMP_DIR/dogfood-vertex.yaml"
+envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
+  <"$TMP_DIR/dogfood-vertex.yaml" >"$TMP_DIR/dogfood-rendered.yaml"
+yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
+  "$TMP_DIR/dogfood-rendered.yaml" >"$TMP_DIR/dogfood-praxis.yaml"
+yq eval '.' "$TMP_DIR/dogfood-praxis.yaml" >/dev/null
+grep -q 'gemini-3.6-flash' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'gpt-5.6-luna' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'claude-sonnet-5-5' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'rits/zai-org/glm-5-3' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'filter: model_to_provider' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'filter: vertex' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'filter: gcp_adc' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'secretName: vertex-sa-key' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q '@sha256:1111111111111111111111111111111111111111111111111111111111111111' "$TMP_DIR/dogfood-rendered.yaml"
+if grep -q 'vertex-only' "$TMP_DIR/dogfood-praxis.yaml"; then
+  echo "dogfood render must keep the shared catalog/access policy" >&2
+  exit 1
+fi
+
 echo "== EnMaaS Gemini Chat Completions contract =="
 yq -e '.filter_chains[] | select(.name == "openai")' "$TMP_DIR/praxis.yaml" >"$TMP_DIR/openai-chain.yaml"
 # /v1/models is served by unified, while Chat Completions goes to openai.
