@@ -313,6 +313,12 @@ if [[ "$PROFILE" == dogfood ]] && secret_exists provider-credentials && \
   # without printing or requiring the operator to re-enter the secret.
   CB_LITELLM_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials \
     -o jsonpath='{.data.LITELLM_API_KEY}' | base64 --decode)"
+  oc -n "$NAMESPACE" create secret generic provider-credentials \
+    --from-literal=ANTHROPIC_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials -o jsonpath='{.data.ANTHROPIC_API_KEY}' | base64 --decode)" \
+    --from-literal=OPENAI_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials -o jsonpath='{.data.OPENAI_API_KEY}' | base64 --decode)" \
+    --from-literal=LITELLM_API_KEY="$(oc -n "$NAMESPACE" get secret provider-credentials -o jsonpath='{.data.LITELLM_API_KEY}' | base64 --decode)" \
+    --from-literal=CB_LITELLM_API_KEY="$CB_LITELLM_API_KEY" \
+    --dry-run=client -o yaml | oc apply -f -
 fi
 if ! provider_credentials_complete || [[ "$ROTATE_SECRETS" == true ]]; then
   for name in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_API_KEY CB_LITELLM_API_KEY; do
