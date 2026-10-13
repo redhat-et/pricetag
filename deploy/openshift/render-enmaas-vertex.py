@@ -56,6 +56,23 @@ def main() -> int:
         if replacements != expected:
             raise ValueError(f"expected {expected} insertion markers for {marker}, found {replacements}")
 
+    if vertex_only == "false":
+        # The base unified chain has a denylist policy placeholder for the
+        # EnMaaS overlay. Dogfood supplies an explicit complete allowlist at
+        # the marker below; remove the base policy so the two policies do not
+        # run sequentially and reject otherwise valid models.
+        unified = re.search(r"(?ms)^      - name: unified\n        filters:\n(?P<body>.*?)(?=^      - name: |\Z)", rendered)
+        if unified is None:
+            raise ValueError("could not find unified filter chain")
+        policy = re.compile(
+            r"(?ms)^          - filter: model_access\n"
+            r".*?^            max_body_bytes: 33554432\n\n"
+        )
+        body, removed = policy.subn("", unified.group("body"), count=1)
+        if removed != 1:
+            raise ValueError(f"expected one base unified model-access policy, found {removed}")
+        rendered = rendered[: unified.start("body")] + body + rendered[unified.end("body") :]
+
     model_policy_check = os.environ.get("METERING_MODEL_POLICY_CHECK", "false")
     if model_policy_check not in {"true", "false"}:
         raise ValueError("METERING_MODEL_POLICY_CHECK must be true or false")
