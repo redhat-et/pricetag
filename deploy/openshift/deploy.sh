@@ -712,8 +712,10 @@ oc -n "$NAMESPACE" rollout status deployment/praxis --timeout=180s
 # without a plan. Route status keeps conditions under status.ingress, so oc
 # wait's generic condition handler is not reliable here.
 required_routes=(ai-gateway ai-gateway-chat-completions ai-gateway-responses \
-  ai-gateway-conversations ai-gateway-models dashboard-api-usage \
-  dashboard-api-model-policies)
+  ai-gateway-conversations ai-gateway-models)
+if [[ "$PROFILE" == enmaas ]]; then
+  required_routes+=(dashboard-api-usage dashboard-api-model-policies)
+fi
 unadmitted_routes=()
 for route in "${required_routes[@]}"; do
   admitted=false
