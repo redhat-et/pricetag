@@ -7,3 +7,16 @@ resources:
   - namespace.yaml
   - maas-api-rbac-binding.yaml
   - ../../base
+
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    newName: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    digest: ${VERTEX_IMAGE_DIGEST}
+
+patches:
+  - path: praxis-vertex-secret-mount.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis

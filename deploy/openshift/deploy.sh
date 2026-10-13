@@ -29,6 +29,20 @@ RETIRE_LEGACY_GATEWAY_HOSTS="${RETIRE_LEGACY_GATEWAY_HOSTS:-false}"
 # monitoring namespaces; the static baseline refuses the flag without that rule.
 PRAXIS_PUBLIC_ADMIN="${PRAXIS_PUBLIC_ADMIN:-false}"
 export PRAXIS_PUBLIC_ADMIN
+# Dogfood uses the same Vertex/Gemini and Vertex-Anthropic model routing as
+# EnMaaS. It requires an approved GCP project, service-account Secret, and an
+# ET Praxis image containing the Vertex filters. Set VERTEX_ENABLED=false only
+# for a deliberate legacy rollback; the dogfood overlay otherwise mounts the
+# Vertex Secret and renders the complete catalog.
+if [[ "$PROFILE" == dogfood ]]; then
+  VERTEX_ENABLED="${VERTEX_ENABLED:-true}"
+else
+  VERTEX_ENABLED="${VERTEX_ENABLED:-false}"
+fi
+[[ "$VERTEX_ENABLED" == true || "$VERTEX_ENABLED" == false ]] || \
+  die "VERTEX_ENABLED must be true or false"
+[[ "$PROFILE" != dogfood || "$VERTEX_ENABLED" == true ]] || \
+  die "PROFILE=dogfood requires VERTEX_ENABLED=true with the current overlay"
 METERING_INTERNAL_AUTH_CHANGED=false
 METERING_PARTNER_API_CHANGED=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -183,17 +197,21 @@ LEGACY_GATEWAY_HOST="${LEGACY_GATEWAY_HOST:-ai-gateway-${NAMESPACE}.${ROUTE_DOMA
 export GATEWAY_HOST GATEWAY_URL DASHBOARD_HOST LEGACY_GATEWAY_HOST KUBE_DNS_SERVICE_IP KUBE_API_SERVICE_IP KUBE_API_ENDPOINT_IP
 
 if [[ "$PREFLIGHT_ONLY" == true ]]; then
-  [[ "$PROFILE" == enmaas ]] || die "PREFLIGHT_ONLY currently supports PROFILE=enmaas only"
-  [[ "$DATABASE_BACKEND" == rds ]] || die "EnMaaS PREFLIGHT_ONLY requires DATABASE_BACKEND=rds"
-  [[ -n "${RDS_EGRESS_CIDR:-}" ]] || die "RDS_EGRESS_CIDR is required for EnMaaS preflight"
+  [[ "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ]] || \
+    die "PREFLIGHT_ONLY requires PROFILE=enmaas or VERTEX_ENABLED=true for dogfood"
+  if [[ "$PROFILE" == enmaas ]]; then
+    [[ "$DATABASE_BACKEND" == rds ]] || die "EnMaaS PREFLIGHT_ONLY requires DATABASE_BACKEND=rds"
+    [[ -n "${RDS_EGRESS_CIDR:-}" ]] || die "RDS_EGRESS_CIDR is required for EnMaaS preflight"
+  fi
   : "${VERTEX_IMAGE_DIGEST:?Set VERTEX_IMAGE_DIGEST for preflight}"
   : "${METERING_IMAGE_DIGEST:?Set METERING_IMAGE_DIGEST for preflight}"
   RENDER_DIR="$(mktemp -d)"
   trap 'rm -rf "$RENDER_DIR"' EXIT
   oc kustomize "$PROFILE_DIR" > "$RENDER_DIR/manifests.yaml"
   command -v python3 >/dev/null || die "python3 is required to render the EnMaaS Vertex config fragments"
+  VERTEX_ONLY=$([[ "$PROFILE" == enmaas ]] && echo true || echo false) \
   python3 "$SCRIPT_DIR/render-enmaas-vertex.py" \
-    "$RENDER_DIR/manifests.yaml" "$PROFILE_DIR/vertex-fragments" \
+    "$RENDER_DIR/manifests.yaml" "$SCRIPT_DIR/overlays/enmaas/vertex-fragments" \
     > "$RENDER_DIR/with-vertex.yaml"
   envsubst "\${NAMESPACE} \${QWEN_ENDPOINT} \${CB_GLM_ENDPOINT} \${GATEWAY_HOST} \${GATEWAY_URL} \${DASHBOARD_HOST} \${VERTEX_PROJECT} \${VERTEX_IMAGE_DIGEST} \${METERING_IMAGE_DIGEST} \${RDS_EGRESS_CIDR} \${KUBE_DNS_SERVICE_IP} \${KUBE_API_SERVICE_IP} \${KUBE_API_ENDPOINT_IP}" \
     < "$RENDER_DIR/with-vertex.yaml" > "$RENDER_DIR/final.yaml"
@@ -291,11 +309,11 @@ if ! secret_exists provider-credentials || [[ "$ROTATE_SECRETS" == true ]]; then
     --dry-run=client -o yaml | oc apply -f -
 fi
 
-# The EnMaaS Praxis deployment mounts its service-account JSON from a
+# The Vertex-enabled Praxis deployment mounts its service-account JSON from a
 # Secret. Preserve existing key material on reruns; rotate only from an
 # explicitly supplied file when ROTATE_SECRETS=true.
-if [[ "$PROFILE" == enmaas ]]; then
-  [[ -n "${VERTEX_PROJECT:-}" ]] || die "VERTEX_PROJECT is required for PROFILE=enmaas"
+if [[ "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ]]; then
+  [[ -n "${VERTEX_PROJECT:-}" ]] || die "VERTEX_PROJECT is required when Vertex routing is enabled"
   : "${PRAXIS_SOURCE_SHA:?Set PRAXIS_SOURCE_SHA to a pushed ET praxis-ai commit}"
   if [[ "${BUILD_PRAXIS_IMAGE:-true}" == true ]]; then
     VERTEX_IMAGE_TAG="$(NAMESPACE="$NAMESPACE" PRAXIS_SOURCE_SHA="$PRAXIS_SOURCE_SHA" \
@@ -367,7 +385,7 @@ fi
 # The metering service's gateway-facing entitlement and event APIs use a
 # private bearer token. Preserve it across reruns; rotate only when explicitly
 # requested so a gateway rollout cannot invalidate active traffic unexpectedly.
-if [[ "$PROFILE" == enmaas ]] && \
+if [[ ( "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ) ]] && \
    (! secret_exists metering-internal-auth || [[ "${ROTATE_METERING_INTERNAL_AUTH:-false}" == true ]]); then
   METERING_INTERNAL_TOKEN="${METERING_INTERNAL_TOKEN:-$(openssl rand -hex 32)}"
   oc -n "$NAMESPACE" create secret generic metering-internal-auth \
@@ -565,10 +583,11 @@ fi
 RENDER_DIR="$(mktemp -d)"
 trap 'rm -rf "$RENDER_DIR"' EXIT
 oc kustomize "$PROFILE_DIR" > "$RENDER_DIR/manifests.yaml"
-if [[ "$PROFILE" == enmaas ]]; then
+if [[ "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ]]; then
   command -v python3 >/dev/null || die "python3 is required to render the EnMaaS Vertex config fragments"
+  VERTEX_ONLY=$([[ "$PROFILE" == enmaas ]] && echo true || echo false) \
   python3 "$SCRIPT_DIR/render-enmaas-vertex.py" \
-    "$RENDER_DIR/manifests.yaml" "$PROFILE_DIR/vertex-fragments" \
+    "$RENDER_DIR/manifests.yaml" "$SCRIPT_DIR/overlays/enmaas/vertex-fragments" \
     > "$RENDER_DIR/with-vertex.yaml"
   mv "$RENDER_DIR/with-vertex.yaml" "$RENDER_DIR/manifests.yaml"
 fi
@@ -657,7 +676,7 @@ fi
 
 # Internal-auth rotation still needs an explicit Metering restart; Praxis
 # config changes are rolled by the checksum annotation above.
-if [[ "$PROFILE" == enmaas && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
+if [[ ( "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ) && "$METERING_INTERNAL_AUTH_CHANGED" == true ]]; then
   oc -n "$NAMESPACE" rollout restart deployment/praxis
 fi
 if [[ "$PROFILE" == enmaas ]] && \
