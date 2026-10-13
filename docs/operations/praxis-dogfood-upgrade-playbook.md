@@ -161,6 +161,33 @@ Final matrix result: **20/23 passed**. The two unavailable Vertex publisher
 models and the internal benchmark upstream remain explicit known failures;
 they are not counted as successful provider coverage.
 
+### Rebase-distance measurement
+
+Rebase distance must be measured against the upstream snapshot used by the
+rebase, not against a later moving upstream branch. The comparison used the
+common pre-rebase base `0048946358`, the old ET tip `1a00d3b4`, the upstream
+snapshot `75e8662d` (`praxis` 0.6.0), and the final PR #10 tree.
+
+| Snapshot | Upstream relationship | Downstream patch footprint |
+|---|---|---|
+| ET before rebase: `1a00d3b4` | 44 ET-only commits; 152 upstream commits not present | 84 files, `+8836/-639` |
+| PR #9 rebased head: `68372c78` | Based on `75e8662d`; 69 ET-only commits, 0 upstream commits behind that snapshot | 75 files, `+7874/-143` |
+| Final merged tree: `0b35bf3e` | PR #10 adds the review/CI follow-up to the rebased tree | 76 files, `+7880/-144` |
+
+The downstream footprint therefore shrank by eight files, 956 additions, and
+495 deletions after the rebase and review cleanup. The current upstream has
+continued moving since `75e8662d`, so a future freshness check should repeat
+the same measurement against a newly pinned upstream commit.
+
+Reproduce the measurement with the clean repositories:
+
+```bash
+git rev-list --left-right --count 1a00d3b4...75e8662d
+git rev-list --left-right --count 68372c78...75e8662d
+git diff --numstat "$(git merge-base 1a00d3b4 75e8662d)" 1a00d3b4
+git diff --numstat 75e8662d 0b35bf3e
+```
+
 ## Env gotchas that cost time in 2026-09 (Claude Code side)
 
 - Auto-mode classifier rides the SONNET tier — remapping tiers to a
