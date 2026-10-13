@@ -24,6 +24,9 @@ images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     newName: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
     digest: ${VERTEX_IMAGE_DIGEST}
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    newName: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    digest: ${METERING_IMAGE_DIGEST}
 
 patches:
   - path: praxis-vertex-secret-mount.yaml
