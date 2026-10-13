@@ -529,6 +529,14 @@ if [[ "$DATABASE_BACKEND" == cnpg ]]; then
     CNPG_ENV_VARS="\${NAMESPACE} \${STORAGE_CLASS} \${COS_BUCKET} \${COS_ENDPOINT} \${COS_REGION} \${AWS_ROLE_ARN}"
   fi
   envsubst "$CNPG_ENV_VARS" < "$CNPG_CLUSTER_MANIFEST" | oc apply -f -
+  # A prior RDS/hibernate deployment may have left the retained CNPG rollback
+  # cluster asleep. Selecting CNPG must explicitly wake it before workloads
+  # wait for the database and start.
+  if [[ "$(oc -n "$NAMESPACE" get clusters.postgresql.cnpg.io/aigateway-pg \
+      -o jsonpath='{.metadata.annotations.cnpg\.io/hibernation}' 2>/dev/null || true)" == on ]]; then
+    oc -n "$NAMESPACE" annotate clusters.postgresql.cnpg.io/aigateway-pg \
+      cnpg.io/hibernation- >/dev/null
+  fi
   envsubst "\${NAMESPACE}" \
     < "$SCRIPT_DIR/database/cnpg/20-scheduled-backup.yaml" | oc apply -f -
   oc -n "$NAMESPACE" wait clusters.postgresql.cnpg.io/aigateway-pg \
