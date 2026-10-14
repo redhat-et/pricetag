@@ -227,8 +227,6 @@ data:
             models:
               - id: claude-opus-4-8
                 display_name: "Claude Opus 4.8"
-              - id: claude-sonnet-5
-                display_name: "Claude Sonnet 5"
               - id: rits/zai-org/glm-5-3
                 display_name: "GLM 5.3 (hosted via curvebender)"
 

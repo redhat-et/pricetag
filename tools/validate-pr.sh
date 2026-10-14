@@ -237,7 +237,11 @@ yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .dat
 yq eval '.' "$TMP_DIR/dogfood-praxis.yaml" >/dev/null
 grep -q 'gemini-3.6-flash' "$TMP_DIR/dogfood-rendered.yaml"
 grep -q 'gpt-5.6-luna' "$TMP_DIR/dogfood-rendered.yaml"
-grep -q 'claude-sonnet-5-5' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'claude-sonnet-4-5' "$TMP_DIR/dogfood-rendered.yaml"
+if grep -qE 'claude-sonnet-5(-5)?' "$TMP_DIR/dogfood-rendered.yaml"; then
+  echo "unsupported Claude Sonnet 5 models must not be rendered" >&2
+  exit 1
+fi
 grep -q 'rits/zai-org/glm-5-3' "$TMP_DIR/dogfood-rendered.yaml"
 grep -q 'filter: intelligent_route' "$TMP_DIR/dogfood-praxis.yaml"
 grep -q '/etc/praxis/routing/openai/routing-overlay.json' "$TMP_DIR/dogfood-praxis.yaml"

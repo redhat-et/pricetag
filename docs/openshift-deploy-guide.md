@@ -758,7 +758,6 @@ data:
             models:                             # ⟨edit⟩ — what client /model pickers see
               - { id: Qwen3.8-27B-FP8,             display_name: "Qwen3.8-27B-FP8 (self-hosted, $0)", owned_by: vllm }
               - { id: claude-opus-4-8,             display_name: "Claude Opus 4.8" }
-              - { id: claude-sonnet-5,             display_name: "Claude Sonnet 5" }
               - { id: claude-haiku-4-5-20251001,   display_name: "Claude Haiku 4.5" }
           - { filter: model_access, mode: denylist, models: ["claude-fable-*"], group_metadata_key: "x-tenant-group", max_body_bytes: 33554432 }
           - { filter: identity_header_guard, prefix: "x-tenant-" }
