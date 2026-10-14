@@ -657,8 +657,13 @@ echo "== end preflight =="
 if [[ "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ]]; then
   new_praxis_config="$(yq -r 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' "$RENDER_DIR/final.yaml")"
   live_praxis_config="$(oc -n "$NAMESPACE" get configmap praxis-config -o jsonpath='{.data.praxis\.yaml}' 2>/dev/null || true)"
-  if grep -q 'filter: intelligent_route' <<<"$new_praxis_config" && \
-     grep -Eq 'filter: (model_to_provider|router)' <<<"$live_praxis_config"; then
+  # The benchmark chain intentionally retains its router and is not part of
+  # this migration. Compare only the public OpenAI and unified chains.
+  affected_chains='.filter_chains[] | select(.name == "openai" or .name == "unified") | .filters[].filter'
+  new_affected_filters="$(yq -r "$affected_chains" <<<"$new_praxis_config")"
+  live_affected_filters="$(yq -r "$affected_chains" <<<"$live_praxis_config" 2>/dev/null || true)"
+  if grep -q '^intelligent_route$' <<<"$new_affected_filters" && \
+     grep -Eq '^(model_to_provider|router)$' <<<"$live_affected_filters"; then
     die "static-router to intelligent-route is a breaking cutover; deploy.sh refuses an in-place RollingUpdate (use the parallel/blue-green Praxis cutover runbook first)"
   fi
 fi
