@@ -57,7 +57,10 @@
 1. The shared host path-routes Anthropic `/v1/messages` to the Messages pipeline and OpenAI `/v1/chat/completions`, `/v1/responses`, and `/v1/conversations` to the OpenAI-compatible pipeline.
 2. Each pipeline validates its native client credential (`x-api-key` for Anthropic, `Authorization: Bearer` for OpenAI) against `maas-api` (`POST /internal/v1/api-keys/validate`, 300 s cache), then sets `x-tenant-*` identity headers (`identity_header_guard` strips client-supplied ones first). Anthropic SDK requests carry `anthropic-version: 2023-06-01`.
 3. Both client families use `GET /v1/models`; the `anthropic-version` header selects the Anthropic envelope, while requests without it receive the OpenAI list envelope.
-4. `model_access` enforces per-group allow/deny lists (groups come from the key's `X-MaaS-Group` at creation).
+4. `external_metering` owns model-policy authorization through PriceTag's
+   model-policy preflight (`model_policy_check: true`); inference-chain policy
+   decisions fail closed while ordinary billing-callout availability remains
+   separately configurable.
 5. `model_to_header` promotes the body's `"model"` field to `X-Model`; protocol-specific routers select OpenAI, Qwen, GLM, or Anthropic backends.
 6. `external_metering` records the request + streamed response usage to metering-service (`fail_open: true` — metering never blocks traffic).
 7. `credential_injection` swaps in the real provider key (client credential stripped); `load_balancer` sends it upstream with correct `Host`/SNI.
@@ -1055,8 +1058,8 @@ claude
 
 | Task | How |
 |---|---|
-| Add a model | praxis `model_catalog` + `router` (+ `load_balancer` cluster if new backend) → `oc rollout restart deploy/praxis`. Add a `MaaSModelRef` + subscription entry for key-side gating. |
-| Add a user group | Key creation header `X-MaaS-Group`, plus `model_access.overrides` if it needs non-default access. |
+| Add a model | Add one candidate to the profile's routing overlay; its `catalog` field drives `/v1/models` and its target/provider fields drive routing. Existing clusters hot-reload without a Praxis restart; use a pushed PriceTag PR for durable changes. |
+| Add a user group | Key creation metadata is consumed by the metering-service model-policy preflight; there is no Praxis `model_access` override. |
 | Edit routing/pricing live | The dashboard's routing tab reads `praxis-config` (read-only via the scoped Role). To write it, edit the CM + rollout restart. |
 | Rotate provider key | Update `provider-credentials` → `oc rollout restart deploy/praxis`. |
 | Rotate session keys | New `SESSION_SECRET` → restart metering-service (logs everyone out). |

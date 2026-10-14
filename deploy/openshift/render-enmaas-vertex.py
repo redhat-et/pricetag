@@ -12,51 +12,57 @@ def main() -> int:
     fragments_dir = Path(sys.argv[2])
     rendered = rendered_path.read_text()
     fragments = {
-        "MODEL_CATALOG": "model-catalog.yaml",
-        "MODEL_TO_PROVIDER_FILTER": "model-to-provider.yaml",
+        "MODEL_TO_PROVIDER_FILTER": "intelligent-route-unified.yaml",
         "ROUTER_ROUTE": "router-route.yaml",
         "FILTER": "vertex-filter.yaml",
         "GCP_CREDENTIAL_FILTER": "gcp-credential-filter.yaml",
         "HOST_OVERRIDE": "vertex-host-override.yaml",
         "UPSTREAM_CLUSTER": "vertex-cluster.yaml",
-        "ONLY_ACCESS": "vertex-only-access.yaml",
-        "ONLY_MODEL_CATALOG": "vertex-only-model-catalog.yaml",
+        "ONLY_MODEL_CATALOG": "overlay-model-catalog.yaml",
         "METERING_INTERNAL_AUTH": "metering-internal-auth.yaml",
-        "OPENAI_MODEL_TO_PROVIDER_FILTER": "openai-model-to-provider.yaml",
-        "OPENAI_ROUTER_ROUTE": "router-route.yaml",
         "OPENAI_PATH_REWRITE": "openai-path-rewrite.yaml",
         "OPENAI_GCP_CREDENTIAL_FILTER": "gcp-credential-filter.yaml",
         "OPENAI_HOST_OVERRIDE": "vertex-host-override.yaml",
         "OPENAI_UPSTREAM_CLUSTER": "vertex-cluster.yaml",
+        "OPENAI_MODEL_TO_PROVIDER_FILTER": "intelligent-route-openai.yaml",
+        "OPENAI_ROUTER_ROUTE": "router-route.yaml",
     }
 
     vertex_only = os.environ.get("VERTEX_ONLY", "true")
     if vertex_only not in {"true", "false"}:
         raise ValueError("VERTEX_ONLY must be true or false")
 
-    if vertex_only == "false":
-        # Remove the legacy router blocks before fragment replacement removes
-        # the marker comments that delimit the blocks. The provider-specific
-        # path rewrite and credential fragments must remain in the chain.
-        for chain_name, next_marker in (
-            ("openai", "ENMAAS_VERTEX_OPENAI_PATH_REWRITE"),
-            ("unified", "ENMAAS_VERTEX_GCP_CREDENTIAL_FILTER"),
-        ):
-            chain = re.search(
-                rf"(?ms)^      - name: {chain_name}\n        filters:\n(?P<body>.*?)(?=^      - name: |\Z)",
-                rendered,
-            )
-            if chain is None:
-                raise ValueError(f"could not find {chain_name} filter chain")
-            body, removed = re.subn(
-                rf"(?ms)^          - filter: router\n.*?(?=^          # {next_marker}\s*$)",
-                "",
-                chain.group("body"),
-                count=1,
-            )
-            if removed != 1:
-                raise ValueError(f"expected one legacy router in {chain_name}, found {removed}")
-            rendered = rendered[: chain.start("body")] + body + rendered[chain.end("body") :]
+    # Remove the legacy router blocks before fragment replacement removes the
+    # marker comments that delimit the blocks. The provider-specific path
+    # rewrite and credential fragments must remain in the chain.
+    for chain_name, next_marker in (
+        ("openai", "ENMAAS_VERTEX_OPENAI_PATH_REWRITE"),
+        ("unified", "ENMAAS_VERTEX_GCP_CREDENTIAL_FILTER"),
+    ):
+        chain = re.search(
+            rf"(?ms)^      - name: {chain_name}\n        filters:\n(?P<body>.*?)(?=^      - name: |\Z)",
+            rendered,
+        )
+        if chain is None:
+            raise ValueError(f"could not find {chain_name} filter chain")
+        body, removed = re.subn(
+            rf"(?ms)^          - filter: router\n.*?(?=^          # {next_marker}\s*$)",
+            "",
+            chain.group("body"),
+            count=1,
+        )
+        if removed != 1:
+            raise ValueError(f"expected one legacy router in {chain_name}, found {removed}")
+        rendered = rendered[: chain.start("body")] + body + rendered[chain.end("body") :]
+
+    # Remove the hand-authored catalog blocks while retaining the first marker
+    # as the insertion point for the overlay projection.
+    catalog_blocks = re.compile(
+        r"(?ms)^          - filter: model_catalog\n.*?(?=^          - filter: |^          # ENMAAS_VERTEX_ONLY_ACCESS\s*$|\Z)"
+    )
+    rendered, catalog_count = catalog_blocks.subn("", rendered)
+    if catalog_count != 2:
+        raise ValueError(f"expected two static model catalogs, found {catalog_count}")
 
     for marker, filename in fragments.items():
         pattern = re.compile(rf"(?m)^(?P<indent>[ \t]*)# ENMAAS_VERTEX_{marker}\s*$")
@@ -64,15 +70,13 @@ def main() -> int:
         # policy, while EnMaaS uses the corresponding markers to narrow its
         # public catalog to Vertex models. Keep one fragment set, but remove
         # the narrowing fragments from the dogfood render.
-        if vertex_only == "false" and marker == "ONLY_ACCESS":
-            snippet = []
-        elif vertex_only == "false" and marker == "ONLY_MODEL_CATALOG":
-            snippet = (fragments_dir / "dogfood-model-catalog.yaml").read_text().rstrip("\n").splitlines()
-        elif vertex_only == "false" and marker == "MODEL_TO_PROVIDER_FILTER":
+        if marker == "ONLY_MODEL_CATALOG":
+            snippet = (fragments_dir / "overlay-model-catalog.yaml").read_text().rstrip("\n").splitlines()
+        elif marker == "MODEL_TO_PROVIDER_FILTER":
             snippet = (fragments_dir / "intelligent-route-unified.yaml").read_text().rstrip("\n").splitlines()
-        elif vertex_only == "false" and marker == "OPENAI_MODEL_TO_PROVIDER_FILTER":
+        elif marker == "OPENAI_MODEL_TO_PROVIDER_FILTER":
             snippet = (fragments_dir / "intelligent-route-openai.yaml").read_text().rstrip("\n").splitlines()
-        elif vertex_only == "false" and marker in {"ROUTER_ROUTE", "OPENAI_ROUTER_ROUTE"}:
+        elif marker in {"ROUTER_ROUTE", "OPENAI_ROUTER_ROUTE"}:
             snippet = []
         else:
             snippet = (fragments_dir / filename).read_text().rstrip("\n").splitlines()
@@ -82,29 +86,12 @@ def main() -> int:
             return "\n".join(f"{indent}{line}" if line else indent for line in snippet)
 
         rendered, replacements = pattern.subn(replace, rendered)
-        if vertex_only == "false" and marker in {"ROUTER_ROUTE", "OPENAI_ROUTER_ROUTE"}:
+        if marker in {"ROUTER_ROUTE", "OPENAI_ROUTER_ROUTE"}:
             expected = 0
         else:
             expected = 3 if marker == "METERING_INTERNAL_AUTH" else 1
         if replacements != expected:
             raise ValueError(f"expected {expected} insertion markers for {marker}, found {replacements}")
-
-    if vertex_only == "false":
-        # The base unified chain has a denylist policy placeholder for the
-        # EnMaaS overlay. Dogfood supplies an explicit complete allowlist at
-        # the marker below; remove the base policy so the two policies do not
-        # run sequentially and reject otherwise valid models.
-        unified = re.search(r"(?ms)^      - name: unified\n        filters:\n(?P<body>.*?)(?=^      - name: |\Z)", rendered)
-        if unified is None:
-            raise ValueError("could not find unified filter chain")
-        policy = re.compile(
-            r"(?ms)^          - filter: model_access\n"
-            r".*?^            max_body_bytes: 33554432\n\n"
-        )
-        body, removed = policy.subn("", unified.group("body"), count=1)
-        if removed != 1:
-            raise ValueError(f"expected one base unified model-access policy, found {removed}")
-        rendered = rendered[: unified.start("body")] + body + rendered[unified.end("body") :]
 
     model_policy_check = os.environ.get("METERING_MODEL_POLICY_CHECK", "false")
     if model_policy_check not in {"true", "false"}:

@@ -1,0 +1,17 @@
+- filter: model_catalog
+  format: anthropic
+  path: /v1/models
+  overlay_file: /etc/praxis/routing/unified/routing-overlay.json
+  conditions:
+    - when:
+        headers:
+          anthropic-version: "2023-06-01"
+
+- filter: model_catalog
+  format: openai
+  path: /v1/models
+  overlay_file: /etc/praxis/routing/openai/routing-overlay.json
+  conditions:
+    - unless:
+        headers:
+          anthropic-version: "2023-06-01"

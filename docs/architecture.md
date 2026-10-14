@@ -59,12 +59,13 @@ asserts this at `smoke` level.
 3. **Pin identity** — `identity_header_guard` strips any client-supplied
    `x-tenant-*` headers first, then Praxis sets them from the validated key.
    Client-asserted identity is never trusted.
-4. **Authorise the model** — `model_access` applies per-group allow/deny lists
-   from the key's group; metering-service can additionally hold a per-user
-   allowlist.
+4. **Authorise the model** — `external_metering` performs the model-policy
+   preflight and returns 403 when PriceTag denies the requested model. The
+   inference chains configure this decision fail-closed; billing availability
+   remains separately configurable.
 5. **Route the model** — `model_to_header` promotes the body's `model` field to
-   `X-Model`; the router picks the upstream cluster (Vertex, OpenAI,
-   curvebender, or a self-hosted backend).
+   `X-Model`; `intelligent_route` selects a candidate from the hot-reloaded
+   overlay, including provider and target-model metadata.
 6. **Meter** — `external_metering` reports the request and streamed usage to
    metering-service. This is **fail-open**: metering outages never block
    inference, so a metering incident shows up as missing rows, not errors.
