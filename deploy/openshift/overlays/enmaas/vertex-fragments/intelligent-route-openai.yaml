@@ -1,6 +1,7 @@
 - filter: intelligent_route
   overlay_file: /etc/praxis/routing/openai/routing-overlay.json
   model_header: X-Model
+  body_authoritative: true
   reload:
     enabled: true
     debounce_ms: 500
