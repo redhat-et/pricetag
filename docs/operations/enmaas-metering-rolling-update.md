@@ -31,6 +31,32 @@ export PRICETAG_KUBECONFIG="$KUBECONFIG"
 ./tools/validate-live-enmaas.sh
 ```
 
+Before rendering or applying anything, the EnMaaS Metering Deployment must
+show this explicit configuration. Do not rely on application defaults:
+
+```text
+DASHBOARD_USE_ROLLUPS=true
+LIVE_ROLLUPS_ENABLED=false
+MONTH_SPEND_ENABLED=false
+MONTH_SPEND_WRITE_ENABLED=false
+DASHBOARD_CACHE_ENABLED=true
+DASHBOARD_CACHE_TTL_SECONDS=60
+```
+
+`LIVE_ROLLUPS_ENABLED=false` is deliberate: it keeps the hour-wide rollup
+advisory lock out of event ingestion. Dashboard rollup reads are parity-gated
+and eventually consistent until the maintenance refresh completes.
+
+Render the target manifests and inspect the actual Deployment before applying:
+
+```bash
+oc kustomize deploy/openshift/overlays/enmaas > /tmp/enmaas-rendered.yaml
+yq -e '.[] | select(.kind == "Deployment" and .metadata.name == "metering-service") |
+  .spec.template.spec.containers[0].env' /tmp/enmaas-rendered.yaml
+```
+
+Stop if any required flag is missing or differs from the values above.
+
 ## 2. Validate the merged source
 
 Use a full commit SHA from `redhat-et/pricetag-metering` main. Do not build
@@ -124,6 +150,13 @@ oc -n enmaas get deployment/metering-service
 This starts the database migration in the new pods while the old pods remain
 serving. Do not restart Praxis or MaaS for a Metering-only change.
 
+The startup migration path takes a shared PostgreSQL advisory lock. During a
+rolling update, one pod may migrate while the others wait. Monitor the full
+startup window, not only the Deployment rollout result. A pod that logs
+`running database migrations` for an extended period, crashes, or reports
+`migration lock`/`context canceled` must stop the rollout and be investigated.
+See [the migration-lock follow-up](https://github.com/redhat-et/pricetag/pull/81).
+
 ## 6. Validate after rollout
 
 Check all pods and recent logs:
@@ -133,7 +166,53 @@ oc -n enmaas get deployment maas-api metering-service praxis
 oc -n enmaas get pods -l app=metering-service
 oc -n enmaas logs -l app=metering-service --since=10m \
   | grep -Ei 'error|fatal|panic|migration' || true
+
+oc -n enmaas get pods -l app=metering-service \
+  -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount'
 ```
+
+Check the rollup state before calling the rollout successful:
+
+```bash
+oc -n enmaas get deployment/metering-service \
+  -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' \
+  | grep -E 'DASHBOARD_USE_ROLLUPS|LIVE_ROLLUPS_ENABLED|MONTH_SPEND|DASHBOARD_CACHE'
+```
+
+The protected `/api/v1/admin/rollups` status must report:
+
+```text
+rollups_ready=true
+parity_healthy=true
+serving_rollups=true
+```
+
+If parity is red, keep `DASHBOARD_USE_ROLLUPS=false`. A red result caused by
+the in-flight hour is a code/configuration defect: the parity window must
+exclude the current hour when live rollup writes are disabled. Do not manually
+force rollup reads on while parity is red.
+
+## 7.1 Read-replica/tool-rollup grant
+
+If EnMaaS uses the readonly database role, it must have SELECT access to every
+rollup table the dashboard reads:
+
+```sql
+GRANT SELECT ON usage_events TO metering_reader;
+GRANT SELECT ON model_pricing TO metering_reader;
+GRANT SELECT ON user_profiles TO metering_reader;
+GRANT SELECT ON usage_hourly TO metering_reader;
+GRANT SELECT ON usage_tool_hourly TO metering_reader;
+```
+
+Apply these grants **after** the Metering startup migration has created
+`usage_hourly` and `usage_tool_hourly`. On RDS, use the approved RDS database
+administration process; do not use the CNPG `oc exec` command. On CNPG, the
+guarded deployment applies the grant after the table exists.
+
+Do not treat a successful Pod readiness check as proof of readonly-role
+permissions. Run a read-only privilege check using the actual
+`READ_DATABASE_URL` role before enabling rollup reads.
 
 Run the read-only smoke and authentication checks:
 
@@ -159,7 +238,7 @@ MODEL_OPENAI='gpt-5.6-luna' \
   ./tools/functional-test.sh --target enmaas --level inference --confirm-prod
 ```
 
-## 7. Rollback
+## 8. Rollback
 
 If readiness, API health, or error rates regress, restore the previous recorded
 image. This does not change Praxis or MaaS. Use the same shell's
@@ -175,3 +254,32 @@ oc -n enmaas rollout status deployment/metering-service --timeout=10m
 
 Record the source SHA, image digest, previous digest, rollout time, validation
 results, and any warnings in the deployment evidence.
+
+## 9. MTD accumulator activation (separate change)
+
+The rolling image update does **not** activate the monthly spend accumulator.
+Keep these flags false during the normal update:
+
+```text
+MONTH_SPEND_ENABLED=false
+MONTH_SPEND_WRITE_ENABLED=false
+```
+
+Only activate MTD in a separate approved operation:
+
+1. Ensure every Metering pod runs the accumulator-capable image.
+2. Drain/stop Metering event ingestion; inference can remain available but
+   Metering fail-open behavior may apply during the drain.
+3. Run `scripts/backfill-month-spend.sql` from an approved writer connection.
+4. The script fails closed on NULL historical `cost_usd` and snapshots only
+   after ingestion is drained.
+5. Validate dollars, tokens, requests, and quota-denial counts.
+6. Enable both flags together and wait for all pods to become Ready:
+
+```text
+MONTH_SPEND_WRITE_ENABLED=true
+MONTH_SPEND_ENABLED=true
+```
+
+7. Reopen ingestion and verify first-request totals, duplicate-event
+   idempotency, and quota decisions.
