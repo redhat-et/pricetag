@@ -120,6 +120,79 @@ After step 7: `oc set image deploy/praxis praxis=…praxis-ai:legacy-<sha>`
   source of truth and the no-rebuild rule retires.
 - Verify via SQL: zero NEW shadow-tagged rows after the flip.
 
+## Validated ET Praxis adoption record (2026-10-13)
+
+This records the PriceTag-only adoption of the merged ET Praxis rebase. It is
+an evidence record, not a replacement for the guarded procedure above.
+
+- Source: `redhat-et/praxis-ai` commit `0b35bf3e` (merged PR #10).
+- Proven image: `sha256:fd5151190b6993a386da0456f9b81d118a8e5ad4461065339f002da3becfa572`.
+- The digest was promoted into the PriceTag production image stream as
+  `praxis-ai:adopted-0b35bf3e`; production kept the deployment name `praxis`.
+- The primary deployment rolled to four ready replicas with
+  `maxUnavailable=0` and `maxSurge=1`; the rollback deployment remained at
+  four ready replicas with the same digest.
+- All four weighted public routes ended at `praxis=100` and
+  `praxis-shadow=0`. No EnMaaS resources were changed.
+- Per-pod Praxis health checks returned `{"status":"ok"}` and the public
+  unauthenticated route checks returned the expected `401`.
+- The prior shadow evidence for this digest recorded 605/605 successful
+  requests. A new synthetic run was not performed because the private
+  synthetic-user inventory was unavailable.
+
+### Provider matrix
+
+The matrix used the live PriceTag routing configuration and the prompt
+`Reply with exactly OK.`. It tested each explicitly configured production
+model route once, plus the internal benchmark lane. GLM was rerun after the
+PriceTag Curvebender credential was corrected; no credential value belongs in
+this repository.
+
+| Family | Checks | Result |
+|---|---:|---|
+| OpenAI (`gpt-5.3-codex`, `gpt-5.4`, `gpt-5.6-luna`) | 3 | 3/3 passed |
+| Vertex Gemini | 4 | 4/4 passed |
+| Vertex Claude | 11 | 9/11 passed; `claude-sonnet-5` and `claude-sonnet-5-5` returned provider `404` because the PriceTag GCP project does not expose those models |
+| Anthropic | 2 | 2/2 passed |
+| Curvebender GLM (`rits/zai-org/glm-5-3`, both supported protocols) | 2 | 2/2 passed after credential correction |
+| Internal `llm-katan` benchmark | 1 | `502` upstream connection error |
+
+Final matrix result: **20/23 passed**. The two unavailable Vertex publisher
+models and the internal benchmark upstream remain explicit known failures;
+they are not counted as successful provider coverage.
+
+### Rebase-distance measurement
+
+Rebase distance must be measured against the upstream snapshot used by the
+rebase, not against a later moving upstream branch. The comparison used the
+common pre-rebase base `0048946358`, the old ET tip `1a00d3b4`, the upstream
+snapshot `75e8662d` (`praxis` 0.6.0, 2026-10-09), and the final PR #10 tree.
+
+| Snapshot | Upstream relationship | Downstream patch footprint |
+|---|---|---|
+| ET before rebase: `1a00d3b4` | 44 ET-only commits; 152 upstream commits not present | 84 files, `+8836/-639` |
+| PR #9 rebased head: `68372c78` | Based on `75e8662d`; 69 ET-only commits, 0 upstream commits behind that snapshot | 75 files, `+7874/-143` |
+| Final merged tree: `0b35bf3e` | PR #10 adds the review/CI follow-up to the rebased tree | 76 files, `+7880/-144` |
+
+The downstream footprint therefore shrank by eight files, 956 additions, and
+495 deletions after the rebase and review cleanup. The current upstream has
+continued moving since `75e8662d`: as of 2026-10-13 its tip is `d5b05be0`,
+23 upstream commits later. On the ancestry-preserving PR #9 branch,
+`68372c78...d5b05be0` is `69` ET-only commits versus `23` upstream-only
+commits. The final ET merge is a squash commit, so its ancestry count is not
+comparable; use its tree for content comparison and the PR #9 branch for
+freshness tracking.
+
+Reproduce the measurement with the clean repositories:
+
+```bash
+git rev-list --left-right --count 1a00d3b4...75e8662d
+git rev-list --left-right --count 68372c78...75e8662d
+git rev-list --left-right --count 68372c78...d5b05be0
+git diff --numstat "$(git merge-base 1a00d3b4 75e8662d)" 1a00d3b4
+git diff --numstat 75e8662d 0b35bf3e
+```
+
 ## Env gotchas that cost time in 2026-09 (Claude Code side)
 
 - Auto-mode classifier rides the SONNET tier — remapping tiers to a
