@@ -78,7 +78,6 @@ data:
             fail_open: true
             identity_header_prefix: "x-tenant-"
             # ENMAAS_METERING_MODEL_POLICY
-            model_policy_check: true
             model_policy_fail_open: false
             default_model: "unknown"
 
@@ -288,7 +287,6 @@ data:
             fail_open: true
             identity_header_prefix: "x-tenant-"
             # ENMAAS_METERING_MODEL_POLICY
-            model_policy_check: true
             model_policy_fail_open: false
             default_model: "unknown"
 

@@ -89,6 +89,17 @@ yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .dat
 yq eval '.' "$TMP_DIR/praxis.yaml" >/dev/null
 grep -q 'model_policy_check: true' "$TMP_DIR/praxis.yaml"
 grep -q 'model_policy_fail_open: false' "$TMP_DIR/praxis.yaml"
+
+echo "== Metering model-policy flag modes =="
+METERING_MODEL_POLICY_CHECK=false python3 deploy/openshift/render-enmaas-vertex.py \
+  "$TMP_DIR/enmaas-kustomized.yaml" \
+  deploy/openshift/overlays/enmaas/vertex-fragments \
+  >"$TMP_DIR/enmaas-policy-disabled.yaml"
+if grep -q 'model_policy_check: true' "$TMP_DIR/enmaas-policy-disabled.yaml"; then
+  echo "METERING_MODEL_POLICY_CHECK=false must remove model_policy_check" >&2
+  exit 1
+fi
+grep -q 'model_policy_fail_open: false' "$TMP_DIR/enmaas-policy-disabled.yaml"
 # Default render keeps the admin listener on loopback; the opt-in render binds
 # it on the pod network together with the flag Praxis requires for that.
 grep -q 'address: "127.0.0.1:9901"' "$TMP_DIR/praxis.yaml"

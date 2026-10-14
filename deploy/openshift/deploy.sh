@@ -648,6 +648,21 @@ echo "== preflight: changes this deployment will apply =="
 show_diff "$RENDER_DIR/final.yaml"
 echo "== end preflight =="
 
+# Static router/model-to-provider chains and intelligent_route overlay chains
+# are not wire-compatible during a normal RollingUpdate: old and new Praxis
+# pods can be selected for the same request while they interpret the shared
+# routing ConfigMap differently. Refuse the first transition here; it must be
+# performed by the parallel/blue-green cutover runbook, after which this
+# deployer can safely manage compatible updates and overlay-only reloads.
+if [[ "$PROFILE" == enmaas || ( "$PROFILE" == dogfood && "$VERTEX_ENABLED" == true ) ]]; then
+  new_praxis_config="$(yq -r 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' "$RENDER_DIR/final.yaml")"
+  live_praxis_config="$(oc -n "$NAMESPACE" get configmap praxis-config -o jsonpath='{.data.praxis\.yaml}' 2>/dev/null || true)"
+  if grep -q 'filter: intelligent_route' <<<"$new_praxis_config" && \
+     grep -Eq 'filter: (model_to_provider|router)' <<<"$live_praxis_config"; then
+    die "static-router to intelligent-route is a breaking cutover; deploy.sh refuses an in-place RollingUpdate (use the parallel/blue-green Praxis cutover runbook first)"
+  fi
+fi
+
 oc apply -f "$RENDER_DIR/final.yaml"
 
 # Compatibility Routes on the former gateway host are managed outside
