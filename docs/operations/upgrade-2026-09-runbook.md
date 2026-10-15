@@ -1,5 +1,9 @@
 # Praxis upgrade runbook — 2026-09 (dogfood → upstream core 0.5.5)
 
+> **Historical record:** This documents the completed 2026-09 dogfood upgrade.
+> Do not run its namespace, Route, or shadow commands for current EnMaaS work.
+> Use [the current EnMaaS Praxis zero-downtime upgrade runbook](enmaas-praxis-zero-downtime-upgrade.md).
+
 Branch: `upgrade/2026-09` in `yossiovadia/ai`. Prod: `praxis` deployment
 in `ai-gateway-dogfood`, served by 4 routes. Prod stays untouched until
 the canary section. Rollback after every step is named explicitly.

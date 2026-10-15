@@ -1,5 +1,10 @@
 # Praxis dogfood upgrade playbook
 
+> **Scope warning:** This playbook is for the historical dogfood shadow stack.
+> It is not the EnMaaS production procedure. The current repository does not
+> contain `deploy/openshift/shadow.sh`; do not copy its shadow commands into
+> EnMaaS. Use [the EnMaaS Praxis zero-downtime upgrade runbook](enmaas-praxis-zero-downtime-upgrade.md).
+
 Generalized from `upgrade-2026-09-runbook.md` (core 0.5.5 upgrade, shipped
 2026-09-18 — that runbook is the worked example). Follow this on the NEXT
 upgrade (core or filters). Timescales: ~2 days local+shadow, then soak/canary

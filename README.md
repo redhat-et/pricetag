@@ -56,6 +56,9 @@ CNPG IAM role.
   environment (`tools/functional-test.sh`).
 - `docs/operations/enmaas-metering-rolling-update.md`: Metering-only AMD64
   build, internal-registry push, zero-unavailable rollout, validation, and rollback.
+- `docs/operations/enmaas-praxis-zero-downtime-upgrade.md`: EnMaaS Praxis
+  source validation, digest build, zero-unavailable rolling upgrade, config
+  change path, validation, and rollback.
 - `docs/operations/new-cluster-deployment.md`: guarded end-to-end checklist for
   bootstrapping and accepting a new OpenShift environment.
 - `docs/operations/rds-debug-client.md`: on-demand, read-only psql client for
