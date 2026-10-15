@@ -13,6 +13,18 @@ resources:
   - dashboard-routes.yaml
   - ../../base
 
+configMapGenerator:
+  - name: praxis-routing-openai
+    files:
+      - routing-overlay.json=routing/openai.json
+    options:
+      disableNameSuffixHash: true
+  - name: praxis-routing-unified
+    files:
+      - routing-overlay.json=routing/unified.json
+    options:
+      disableNameSuffixHash: true
+
 images:
   - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/maas-api
     newName: image-registry.openshift-image-registry.svc:5000/enmaas/maas-api
@@ -71,6 +83,36 @@ patches:
       version: v1
       kind: Deployment
       name: praxis
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: routing-openai
+          configMap:
+            name: praxis-routing-openai
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: routing-unified
+          configMap:
+            name: praxis-routing-unified
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: routing-openai
+          mountPath: /etc/praxis/routing/openai
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: routing-unified
+          mountPath: /etc/praxis/routing/unified
+          readOnly: true
   - target:
       group: apps
       version: v1

@@ -16,9 +16,10 @@ An unauthenticated request should return `401` on every protected route.
 
 ## Requests Return 403
 
-Check the model name and the user's MaaS group membership. Inspect the
-`model_access` configuration and verify the requested model is present in the
-appropriate allowlist.
+Check the model name and the metering-service model-policy response. The
+inference chains use `model_policy_check: true` and
+`model_policy_fail_open: false`; verify PriceTag returned
+`model_allowed: true` for the caller and requested model.
 
 ## Requests Return 404 "The model ... does not exist"
 

@@ -1,0 +1,25 @@
+- op: remove
+  path: /spec/template/spec/containers/0/env/1/valueFrom
+- op: add
+  path: /spec/template/spec/containers/0/env/1/value
+  value: "false"
+- op: remove
+  path: /spec/template/spec/containers/0/env/2/valueFrom
+- op: add
+  path: /spec/template/spec/containers/0/env/2/value
+  value: ai-gateway-dogfood
+- op: remove
+  path: /spec/template/spec/containers/0/env/4/valueFrom
+- op: add
+  path: /spec/template/spec/containers/0/env/4/value
+  value: "true"
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: METRICS_SECURE
+    value: "false"
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: MAAS_SUBSCRIPTION_MODE
+    value: standalone

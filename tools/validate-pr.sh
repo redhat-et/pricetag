@@ -38,7 +38,6 @@ export METERING_MODEL_POLICY_CHECK=true
 export KUBE_DNS_SERVICE_IP=172.30.0.10
 export KUBE_API_SERVICE_IP=172.30.0.1
 export KUBE_API_ENDPOINT_IP=172.20.0.1
-export QWEN_ENDPOINT=qwen.ci.example.com
 export CB_GLM_ENDPOINT=glm.ci.example.com
 
 cd "$ROOT_DIR"
@@ -83,24 +82,24 @@ PRAXIS_PUBLIC_ADMIN=false python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
   >"$TMP_DIR/enmaas-vertex.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
+envsubst '${NAMESPACE} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
   <"$TMP_DIR/enmaas-vertex.yaml" >"$TMP_DIR/enmaas-rendered.yaml"
 yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
   "$TMP_DIR/enmaas-rendered.yaml" >"$TMP_DIR/praxis.yaml"
 yq eval '.' "$TMP_DIR/praxis.yaml" >/dev/null
 grep -q 'model_policy_check: true' "$TMP_DIR/praxis.yaml"
+grep -q 'model_policy_fail_open: false' "$TMP_DIR/praxis.yaml"
+
+echo "== Metering model-policy flag modes =="
 METERING_MODEL_POLICY_CHECK=false python3 deploy/openshift/render-enmaas-vertex.py \
   "$TMP_DIR/enmaas-kustomized.yaml" \
   deploy/openshift/overlays/enmaas/vertex-fragments \
-  >"$TMP_DIR/enmaas-without-model-policy.yaml"
-envsubst '${NAMESPACE} ${QWEN_ENDPOINT} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR}' \
-  <"$TMP_DIR/enmaas-without-model-policy.yaml" >"$TMP_DIR/enmaas-without-model-policy-rendered.yaml"
-yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
-  "$TMP_DIR/enmaas-without-model-policy-rendered.yaml" >"$TMP_DIR/praxis-without-model-policy.yaml"
-if grep -q 'model_policy_check:' "$TMP_DIR/praxis-without-model-policy.yaml"; then
-  echo "disabled model-policy config must be omitted for old Praxis binaries" >&2
+  >"$TMP_DIR/enmaas-policy-disabled.yaml"
+if grep -q 'model_policy_check: true' "$TMP_DIR/enmaas-policy-disabled.yaml"; then
+  echo "METERING_MODEL_POLICY_CHECK=false must remove model_policy_check" >&2
   exit 1
 fi
+grep -q 'model_policy_fail_open: false' "$TMP_DIR/enmaas-policy-disabled.yaml"
 # Default render keeps the admin listener on loopback; the opt-in render binds
 # it on the pod network together with the flag Praxis requires for that.
 grep -q 'address: "127.0.0.1:9901"' "$TMP_DIR/praxis.yaml"
@@ -222,93 +221,70 @@ for expected in 'maas-api=2' 'metering-service=4' 'praxis=4'; do
 done
 
 echo "== EnMaaS Vertex contract =="
-grep -q 'model_to_provider' "$TMP_DIR/praxis.yaml"
-grep -q 'gcp_adc' "$TMP_DIR/praxis.yaml"
-grep -q '@sha256:' "$TMP_DIR/enmaas-rendered.yaml"
-grep -q 'claude-sonnet-4-5' "$TMP_DIR/praxis.yaml"
-grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
-grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
-
-echo "== EnMaaS Gemini Chat Completions contract =="
-yq -e '.filter_chains[] | select(.name == "openai")' "$TMP_DIR/praxis.yaml" >"$TMP_DIR/openai-chain.yaml"
-# /v1/models is served by unified, while Chat Completions goes to openai.
-# Check the effective catalog and the serving chain together so a listed
-# Gemini model cannot silently fall through to api.openai.com.
-yq -e '[.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "openai")][0]' \
-  "$TMP_DIR/praxis.yaml" >"$TMP_DIR/openai-catalog.yaml"
-for model in gemini-3.6-flash gemini-3.7-flash gemini-3.8-flash gemini-3.1-pro-preview; do
-  yq -e '.models[] | select(.id == "'"$model"'" and .owned_by == "vertex")' \
-    "$TMP_DIR/openai-catalog.yaml" >/dev/null
-  yq -e '.filters[] | select(.filter == "model_to_provider") | .models[] | select(.model == "'"$model"'" and .provider == "vertex" and .target_model == "google/'"$model"'") | select((.paths | length) == 1 and .paths[0] == "/v1/chat/completions")' \
-    "$TMP_DIR/openai-chain.yaml" >/dev/null
-  refute yq -e '.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "anthropic") | .models[] | select(.id == "'"$model"'")' "$TMP_DIR/praxis.yaml"
-done
-for model in gpt-5.3-codex gpt-5.4 gpt-5.6-luna; do
-  yq -e '.models[] | select(.id == "'"$model"'" and .owned_by == "openai")' \
-    "$TMP_DIR/openai-catalog.yaml" >/dev/null
-done
-yq -e '.models[] | select(.id == "rits/zai-org/glm-5-3" and .owned_by == "curvebender")' \
-  "$TMP_DIR/openai-catalog.yaml" >/dev/null
-yq -e '.filters[] | select(.filter == "router") | .routes[0] | select(.headers."x-praxis-ai-provider" == "vertex" and .cluster == "vertex")' \
-  "$TMP_DIR/openai-chain.yaml" >/dev/null
-yq -e '.filters[] | select(.filter == "path_rewrite") | select(.replace.pattern == "^/v1/chat/completions$" and .replace.replacement == "/v1beta1/projects/ci-placeholder-project/locations/global/endpoints/openapi/chat/completions" and .conditions[0].when.headers."x-praxis-ai-provider" == "vertex")' \
-  "$TMP_DIR/openai-chain.yaml" >/dev/null
-yq -e '.filters[] | select(.filter == "gcp_adc" and .source == "key_file" and .credentials_file == "/etc/vertex-sa/sa-key.json") | select((.clusters | length) == 1 and .clusters[0] == "vertex")' \
-  "$TMP_DIR/openai-chain.yaml" >/dev/null
-yq -e '.filters[] | select(.filter == "credential_injection") | .clusters[] | select(.name == "vertex" and .header == "Host" and .value == "aiplatform.googleapis.com")' \
-  "$TMP_DIR/openai-chain.yaml" >/dev/null
-yq -e '.filters[] | select(.filter == "load_balancer") | .clusters[] | select(.name == "vertex" and .tls.sni == "aiplatform.googleapis.com") | select((.endpoints | length) == 1 and .endpoints[0] == "aiplatform.googleapis.com:443")' \
-  "$TMP_DIR/openai-chain.yaml" >/dev/null
-# Claude's Vertex adapter must never translate Gemini Chat Completions.
-refute yq -e '.filters[] | select(.filter == "vertex")' "$TMP_DIR/openai-chain.yaml"
-for profile in test dogfood stage; do
-  refute grep -q 'google/gemini-' "$TMP_DIR/$profile.yaml"
-done
-
-echo "== EnMaaS catalog <-> access consistency =="
-# Review guard (PR #76): a model published in /v1/models (answered by the
-# unified chain) must actually be reachable on the listener that serves its
-# inference, or it is "discoverable but denied". Every openai-format catalog
-# entry is served by the openai chain (Chat Completions / Responses: Gemini ->
-# vertex, GLM -> cb-glm, GPT -> openai). Assert none of them are blocked by that
-# chain's model_access. This verifies the allow-all (empty denylist) posture
-# EXPLICITLY rather than assuming an allowlist entry, so discovery can never
-# drift from access even if someone later narrows the openai chain.
-access_blockers_on_openai() {
-  # Count model_access filters on the openai chain that would block "$1":
-  #   - an allowlist that lists neither "*" nor the model, or
-  #   - a denylist that lists the model.
-  yq -e '[.filters[] | select(.filter == "model_access") |
-    select(
-      (.mode == "allowlist" and ((.models // []) | (contains(["*"]) or contains(["'"$1"'"])) | not))
-      or
-      (.mode == "denylist" and ((.models // []) | contains(["'"$1"'"])))
-    )] | length' "$TMP_DIR/openai-chain.yaml"
-}
-for model in $(yq -r '.models[].id' "$TMP_DIR/openai-catalog.yaml"); do
-  blockers="$(access_blockers_on_openai "$model")"
-  if [ "$blockers" != "0" ]; then
-    echo "model '$model' is published in the openai /v1/models catalog but blocked by model_access on the openai chain ($blockers filter(s))" >&2
-    exit 1
-  fi
-done
-
-echo "== EnMaaS model-catalog hygiene =="
-# The base anthropic/OpenAI model_catalog filters still render into the EnMaaS
-# ConfigMap alongside the Vertex-only catalog; Metering's /api/v1/models dedups
-# across every model_catalog entry. Guard against stale or non-public ids
-# leaking back into the EnMaaS-advertised catalog. Dated model ids and the
-# octo-eng-only Fable model must not appear.
-for stale_id in claude-haiku-4-5-20251001 claude-fable-5; do
-  if grep -q "$stale_id" "$TMP_DIR/praxis.yaml"; then
-    echo "stale/non-public model id '$stale_id' leaked into the EnMaaS catalog" >&2
-    exit 1
-  fi
-done
-if grep -nE 'id: claude-[a-z]+-[0-9.]+-[0-9]{8}' "$TMP_DIR/praxis.yaml"; then
-  echo "dated Claude model id must not appear in the EnMaaS catalog" >&2
+if grep -q 'filter: model_access\|filter: model_to_provider' "$TMP_DIR/praxis.yaml"; then
+  echo "EnMaaS render must not retain retired model filters" >&2
   exit 1
 fi
+grep -q 'filter: intelligent_route' "$TMP_DIR/praxis.yaml"
+grep -q '/etc/praxis/routing/openai/routing-overlay.json' "$TMP_DIR/praxis.yaml"
+grep -q '/etc/praxis/routing/unified/routing-overlay.json' "$TMP_DIR/praxis.yaml"
+grep -q 'gcp_adc' "$TMP_DIR/praxis.yaml"
+grep -q '@sha256:' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q 'claude-sonnet-4-5' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
+grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
+grep -q 'model_policy_fail_open: false' "$TMP_DIR/praxis.yaml"
+
+echo "== Dogfood rendered Praxis configuration =="
+kubectl kustomize deploy/openshift/overlays/dogfood >"$TMP_DIR/dogfood-kustomized.yaml"
+VERTEX_ONLY=false python3 deploy/openshift/render-enmaas-vertex.py \
+  "$TMP_DIR/dogfood-kustomized.yaml" \
+  deploy/openshift/overlays/enmaas/vertex-fragments \
+  >"$TMP_DIR/dogfood-vertex.yaml"
+envsubst '${NAMESPACE} ${CB_GLM_ENDPOINT} ${GATEWAY_HOST} ${GATEWAY_URL} ${DASHBOARD_HOST} ${VERTEX_PROJECT} ${VERTEX_IMAGE_DIGEST} ${METERING_IMAGE_DIGEST} ${RDS_EGRESS_CIDR} ${KUBE_DNS_SERVICE_IP} ${KUBE_API_SERVICE_IP} ${KUBE_API_ENDPOINT_IP}' \
+  <"$TMP_DIR/dogfood-vertex.yaml" >"$TMP_DIR/dogfood-rendered.yaml"
+yq -e 'select(.kind == "ConfigMap" and .metadata.name == "praxis-config") | .data."praxis.yaml"' \
+  "$TMP_DIR/dogfood-rendered.yaml" >"$TMP_DIR/dogfood-praxis.yaml"
+yq eval '.' "$TMP_DIR/dogfood-praxis.yaml" >/dev/null
+grep -q 'gemini-3.6-flash' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'gpt-5.6-luna' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'claude-sonnet-4-5' "$TMP_DIR/dogfood-rendered.yaml"
+if grep -qE 'claude-sonnet-5(-5)?' "$TMP_DIR/dogfood-rendered.yaml"; then
+  echo "unsupported Claude Sonnet 5 models must not be rendered" >&2
+  exit 1
+fi
+grep -q 'rits/zai-org/glm-5-3' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'filter: intelligent_route' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q '/etc/praxis/routing/openai/routing-overlay.json' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q '/etc/praxis/routing/unified/routing-overlay.json' "$TMP_DIR/dogfood-praxis.yaml"
+if grep -q 'filter: model_to_provider' "$TMP_DIR/dogfood-praxis.yaml"; then
+  echo "dogfood render must not retain static model_to_provider routing" >&2
+  exit 1
+fi
+grep -q 'filter: vertex' "$TMP_DIR/dogfood-praxis.yaml"
+grep -q 'filter: gcp_adc' "$TMP_DIR/dogfood-praxis.yaml"
+if grep -q 'filter: model_access' "$TMP_DIR/dogfood-praxis.yaml"; then
+  echo "dogfood render must not retain model_access" >&2
+  exit 1
+fi
+grep -q 'secretName: vertex-sa-key' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q '@sha256:1111111111111111111111111111111111111111111111111111111111111111' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'name: MONTHLY_TOKEN_QUOTA' "$TMP_DIR/dogfood-rendered.yaml"
+grep -q 'value: "10000000000"' "$TMP_DIR/dogfood-rendered.yaml"
+if grep -q 'vertex-only' "$TMP_DIR/dogfood-praxis.yaml"; then
+  echo "dogfood render must keep the shared catalog/access policy" >&2
+  exit 1
+fi
+
+echo "== overlay routing/catalog contract =="
+yq -e '.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "openai") | select(.overlay_file == "/etc/praxis/routing/openai/routing-overlay.json")' "$TMP_DIR/praxis.yaml" >/dev/null
+yq -e '.filter_chains[] | select(.name == "unified") | .filters[] | select(.filter == "model_catalog" and .format == "anthropic") | select(.overlay_file == "/etc/praxis/routing/unified/routing-overlay.json")' "$TMP_DIR/praxis.yaml" >/dev/null
+refute grep -q 'filter: model_access' "$TMP_DIR/praxis.yaml"
+refute grep -q 'filter: model_to_provider' "$TMP_DIR/praxis.yaml"
+grep -q 'gemini-3.6-flash' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q 'rits/zai-org/glm-5-3' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q 'model_policy_check: true' "$TMP_DIR/praxis.yaml"
+grep -q 'model_policy_fail_open: false' "$TMP_DIR/praxis.yaml"
 
 echo "== secret-pattern scan =="
 if git grep -n -I -E 'BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}' -- ':!*.lock'; then

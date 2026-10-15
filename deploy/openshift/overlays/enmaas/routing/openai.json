@@ -1,0 +1,15 @@
+{
+  "local_site": "enmaas",
+  "network": "enmaas",
+  "selection_policy": {"mode": "deterministic"},
+  "candidates": [
+    {"kind":"inference_model","name":"gpt-5.3-codex","site":"enmaas","cluster":"openai","catalog":["openai"],"owned_by":"openai"},
+    {"kind":"inference_model","name":"gpt-5.4","site":"enmaas","cluster":"openai","catalog":["openai"],"owned_by":"openai"},
+    {"kind":"inference_model","name":"gpt-5.6-luna","site":"enmaas","cluster":"openai","catalog":["openai"],"owned_by":"openai"},
+    {"kind":"inference_model","name":"rits/zai-org/glm-5-3","site":"enmaas","cluster":"cb-glm","catalog":["openai"],"owned_by":"curvebender"},
+    {"kind":"inference_model","name":"gemini-3.6-flash","site":"enmaas","cluster":"vertex","provider":"vertex","target_model":"google/gemini-3.6-flash","paths":["/v1/chat/completions"],"catalog":["openai"],"owned_by":"vertex"},
+    {"kind":"inference_model","name":"gemini-3.7-flash","site":"enmaas","cluster":"vertex","provider":"vertex","target_model":"google/gemini-3.7-flash","paths":["/v1/chat/completions"],"catalog":["openai"],"owned_by":"vertex"},
+    {"kind":"inference_model","name":"gemini-3.8-flash","site":"enmaas","cluster":"vertex","provider":"vertex","target_model":"google/gemini-3.8-flash","paths":["/v1/chat/completions"],"catalog":["openai"],"owned_by":"vertex"},
+    {"kind":"inference_model","name":"gemini-3.1-pro-preview","site":"enmaas","cluster":"vertex","provider":"vertex","target_model":"google/gemini-3.1-pro-preview","paths":["/v1/chat/completions"],"catalog":["openai"],"owned_by":"vertex"}
+  ]
+}

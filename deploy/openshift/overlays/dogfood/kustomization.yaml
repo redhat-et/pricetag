@@ -7,3 +7,73 @@ resources:
   - namespace.yaml
   - maas-api-rbac-binding.yaml
   - ../../base
+
+configMapGenerator:
+  - name: praxis-routing-openai
+    files:
+      - routing-overlay.json=routing/openai.json
+    options:
+      disableNameSuffixHash: true
+  - name: praxis-routing-unified
+    files:
+      - routing-overlay.json=routing/unified.json
+    options:
+      disableNameSuffixHash: true
+
+images:
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    newName: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/praxis-ai
+    digest: ${VERTEX_IMAGE_DIGEST}
+  - name: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    newName: image-registry.openshift-image-registry.svc:5000/ai-gateway-dogfood/metering-service
+    digest: ${METERING_IMAGE_DIGEST}
+
+patches:
+  - path: praxis-vertex-secret-mount.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
+  - path: maas-api-dogfood-env.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: maas-api
+  - path: metering-dogfood-quota.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: metering-service
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: praxis
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: routing-openai
+          configMap:
+            name: praxis-routing-openai
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: routing-unified
+          configMap:
+            name: praxis-routing-unified
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: routing-openai
+          mountPath: /etc/praxis/routing/openai
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: routing-unified
+          mountPath: /etc/praxis/routing/unified
+          readOnly: true

@@ -1,0 +1,125 @@
+{
+  "local_site": "dogfood",
+  "network": "dogfood",
+  "selection_policy": {
+    "mode": "deterministic"
+  },
+  "candidates": [
+    {
+      "kind": "inference_model",
+      "name": "gpt-5.3-codex",
+      "site": "dogfood",
+      "cluster": "openai",
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gpt-5.3-codex",
+      "owned_by": "openai",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "gpt-5.4",
+      "site": "dogfood",
+      "cluster": "openai",
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gpt-5.4",
+      "owned_by": "openai",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "gpt-5.6-luna",
+      "site": "dogfood",
+      "cluster": "openai",
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gpt-5.6-luna",
+      "owned_by": "openai",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "rits/zai-org/glm-5-3",
+      "site": "dogfood",
+      "cluster": "cb-glm",
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "rits/zai-org/glm-5-3",
+      "owned_by": "curvebender",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "gemini-3.6-flash",
+      "site": "dogfood",
+      "cluster": "vertex",
+      "provider": "vertex",
+      "target_model": "google/gemini-3.6-flash",
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gemini-3.6-flash",
+      "owned_by": "vertex",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "gemini-3.7-flash",
+      "site": "dogfood",
+      "cluster": "vertex",
+      "provider": "vertex",
+      "target_model": "google/gemini-3.7-flash",
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gemini-3.7-flash",
+      "owned_by": "vertex",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "gemini-3.8-flash",
+      "site": "dogfood",
+      "cluster": "vertex",
+      "provider": "vertex",
+      "target_model": "google/gemini-3.8-flash",
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gemini-3.8-flash",
+      "owned_by": "vertex",
+      "created": 0
+    },
+    {
+      "kind": "inference_model",
+      "name": "gemini-3.1-pro-preview",
+      "site": "dogfood",
+      "cluster": "vertex",
+      "provider": "vertex",
+      "target_model": "google/gemini-3.1-pro-preview",
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "catalog": [
+        "openai"
+      ],
+      "display_name": "gemini-3.1-pro-preview",
+      "owned_by": "vertex",
+      "created": 0
+    }
+  ]
+}
