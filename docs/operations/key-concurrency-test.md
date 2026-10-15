@@ -4,6 +4,10 @@
 burst without exposing the keys in argv, logs or result files. It uses Python's
 standard library only.
 
+See [200-user production test results](200-user-test-results-2026-10-03.md) for
+the executed workload, measurements and limitations from the October 3, 2026
+baseline.
+
 ## Safety model
 
 - The CSV must be mode `0600` and contain unique `sequence`, `user_id`, `email`
