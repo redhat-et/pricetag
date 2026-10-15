@@ -1,0 +1,28 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: praxis-certificate
+  annotations:
+    # Issue a temporary certificate while the DNS record is not created
+    # and pointing to the LoadBalancer address
+    cert-manager.io/issue-temporary-certificate: "true"
+  labels:
+    app: praxis
+spec:
+  secretName: praxis-certificate-tls
+  commonName: ${GATEWAY_HOST}
+  dnsNames:
+    - ${GATEWAY_HOST}
+    - ${DASHBOARD_HOST}
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  duration: 2160h # 90d
+  renewBefore: 720h # renew at 60d
+  secretTemplate:
+    labels:
+      app: praxis
