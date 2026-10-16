@@ -127,12 +127,9 @@ Each model below was tested against Vertex with the EnMaaS service account and
 then through the EnMaaS gateway with a bounded request:
 
 ```text
-claude-sonnet-4-5
 claude-haiku-4-5
-claude-opus-4-5
 claude-opus-4-6
 claude-sonnet-4-6
-claude-opus-4-7
 claude-opus-4-8
 claude-opus-5
 claude-opus-5-5
