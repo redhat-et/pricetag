@@ -234,6 +234,14 @@ grep -q 'claude-haiku-4-5' "$TMP_DIR/enmaas-rendered.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
 grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 grep -q 'model_policy_fail_open: false' "$TMP_DIR/praxis.yaml"
+for model in \
+  gpt-6-luna gpt-6.1-sol gpt-6-sol gpt-5.6-terra gpt-6-astra gpt-5.5 \
+  claude-sonnet-5 claude-sonnet-5-5; do
+  grep -q "$model" "$TMP_DIR/enmaas-rendered.yaml" || {
+    echo "EnMaaS render is missing RCA high-volume model $model" >&2
+    exit 1
+  }
+done
 
 echo "== Dogfood rendered Praxis configuration =="
 kubectl kustomize deploy/openshift/overlays/dogfood >"$TMP_DIR/dogfood-kustomized.yaml"

@@ -147,6 +147,28 @@ The catalog exposes only the verified models. Adding future models requires
 verifying Vertex access, quota, and provider terms before adding their mapping
 and catalog entry.
 
+## RCA high-volume model coverage
+
+The 2026-10-16 shadow-canary RCA identified these additional active model IDs
+that were previously served by the production OpenAI catch-all and therefore
+must be present in the EnMaaS overlay when the shadow configuration is used:
+
+```text
+gpt-6-luna
+gpt-6.1-sol
+gpt-6-sol
+gpt-5.6-terra
+gpt-6-astra
+gpt-5.5
+claude-sonnet-5
+claude-sonnet-5-5
+```
+
+They are deployment/routing entries, not claims that every provider model is
+advertised by `/v1/models`. The overlay must preserve the production
+catch-all/passthrough behavior for other valid provider model IDs until the
+long-term routing design replaces it safely.
+
 ## AI Budget Tool integration
 
 The Budget Tool needs a **private, authenticated service-to-service
