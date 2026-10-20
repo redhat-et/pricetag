@@ -231,6 +231,7 @@ grep -q '/etc/praxis/routing/unified/routing-overlay.json' "$TMP_DIR/praxis.yaml
 grep -q 'gcp_adc' "$TMP_DIR/praxis.yaml"
 grep -q '@sha256:' "$TMP_DIR/enmaas-rendered.yaml"
 grep -q 'claude-sonnet-4-5' "$TMP_DIR/enmaas-rendered.yaml"
+grep -q 'claude-haiku-5-5' "$TMP_DIR/enmaas-rendered.yaml"
 grep -q 'beta_allowlist' "$TMP_DIR/praxis.yaml"
 grep -q 'internal_auth_file' "$TMP_DIR/praxis.yaml"
 grep -q 'model_policy_fail_open: false' "$TMP_DIR/praxis.yaml"
