@@ -23,6 +23,22 @@
     },
     {
       "kind": "inference_model",
+      "name": "claude-haiku-5-5",
+      "site": "enmaas",
+      "cluster": "vertex",
+      "provider": "vertex",
+      "target_model": "vertex/claude-haiku-5-5",
+      "paths": [
+        "/v1/messages",
+        "/v1/messages/count_tokens"
+      ],
+      "catalog": [
+        "anthropic"
+      ],
+      "owned_by": "vertex"
+    },
+    {
+      "kind": "inference_model",
       "name": "claude-haiku-4-5",
       "site": "enmaas",
       "cluster": "vertex",
