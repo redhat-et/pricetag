@@ -40,6 +40,30 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  name: dashboard-oauth-login
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /oauth/login
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard-oauth-callback
+  labels: { app: metering-service }
+spec:
+  host: ${DASHBOARD_HOST}
+  path: /oauth/callback
+  to: { kind: Service, name: metering-service }
+  port: { targetPort: 8080 }
+  tls: { termination: edge }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
   name: dashboard-health
   labels: { app: metering-service }
 spec:
